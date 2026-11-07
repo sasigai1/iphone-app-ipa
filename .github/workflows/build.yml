@@ -1,3 +1,4 @@
+
 name: Build IPA
 
 on:
@@ -20,6 +21,64 @@ jobs:
       - name: Xcode version
         run: xcodebuild -version
 
+      - name: Generate app icon
+        run: |
+          mkdir -p Sources/Assets.xcassets/AppIcon.appiconset
+          python3 - <<'PY'
+          import json, math, os, struct, zlib
+          S = 1024
+          out = "Sources/Assets.xcassets/AppIcon.appiconset"
+          os.makedirs(out, exist_ok=True)
+          with open("Sources/Assets.xcassets/Contents.json", "w") as f:
+              json.dump({"info": {"author": "xcode", "version": 1}}, f, indent=2)
+          with open(os.path.join(out, "Contents.json"), "w") as f:
+              json.dump({"images": [{"filename": "Icon1024.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"}], "info": {"author": "xcode", "version": 1}}, f, indent=2)
+          def rrect(px, py, x0, y0, x1, y1, r):
+              cx = (x0 + x1) / 2.0
+              cy = (y0 + y1) / 2.0
+              hw = (x1 - x0) / 2.0 - r
+              hh = (y1 - y0) / 2.0 - r
+              dx = abs(px - cx) - hw
+              dy = abs(py - cy) - hh
+              d = math.hypot(max(dx, 0.0), max(dy, 0.0)) + min(max(dx, dy), 0.0) - r
+              if d <= -0.5:
+                  return 1.0
+              if d >= 0.5:
+                  return 0.0
+              return 0.5 - d
+          lines = [(296, 356, 560, 30), (428, 474, 762, 23), (522, 568, 762, 23), (616, 662, 668, 23)]
+          raw = bytearray()
+          for y in range(S):
+              raw.append(0)
+              for x in range(S):
+                  t = (x * 0.45 + y * 0.55) / S
+                  r = 255 + (238 - 255) * t
+                  g = 178 + (86 - 178) * t
+                  b = 108 + (56 - 108) * t
+                  a = rrect(x, y, 176, 150, 848, 874, 112)
+                  if a > 0:
+                      r = r * (1 - a) + 255 * a
+                      g = g * (1 - a) + 252 * a
+                      b = b * (1 - a) + 246 * a
+                      for ln in lines:
+                          if ln[0] - 2 <= y <= ln[1] + 2 and 240 <= x <= ln[2] + 2:
+                              la = rrect(x, y, 250, ln[0], ln[2], ln[1], ln[3])
+                              if la > 0:
+                                  r = r * (1 - la) + 240 * la
+                                  g = g * (1 - la) + 112 * la
+                                  b = b * (1 - la) + 56 * la
+                  raw.append(max(0, min(255, int(round(r)))))
+                  raw.append(max(0, min(255, int(round(g)))))
+                  raw.append(max(0, min(255, int(round(b)))))
+          def chunk(tag, data):
+              return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
+          png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", S, S, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b"")
+          with open(os.path.join(out, "Icon1024.png"), "wb") as f:
+              f.write(png)
+          print("icon bytes:", len(png))
+          PY
+          ls -l Sources/Assets.xcassets/AppIcon.appiconset
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -35,8 +94,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon \
             SYMROOT="$PWD/out" \
             build
+
+      - name: Verify app icon
+        run: |
+          APP=out/Release-iphoneos/DiaryApp.app
+          ls -la "$APP"
+          plutil -p "$APP/Info.plist" | grep -i -A3 icon || true
+          if ls "$APP"/AppIcon*.png >/dev/null 2>&1; then echo ICON_OK; else echo ICON_MISSING; exit 1; fi
 
       - name: Package into ipa
         run: |
