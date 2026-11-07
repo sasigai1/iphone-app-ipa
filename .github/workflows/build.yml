@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -32,7 +35,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            SYMROOT="$PWD/out" \
+            SYMROOT="\$PWD/out" \
             build
 
       - name: Package into ipa
@@ -42,9 +45,17 @@ jobs:
           zip -qry DiaryApp.ipa Payload
           ls -lh DiaryApp.ipa
 
-      - name: Upload ipa
+      - name: Upload ipa artifact
         uses: actions/upload-artifact@v4
         with:
           name: DiaryApp-unsigned-ipa
           path: DiaryApp.ipa
           retention-days: 30
+
+      - name: Publish release with ipa
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-\${{ github.run_number }}
+          name: 日记本 IPA (build \${{ github.run_number }})
+          body: SwiftUI 日记本，未签名 ipa，用 Sideloadly 或 AltStore 自签安装。
+          files: DiaryApp.ipa
