@@ -17,11 +17,13 @@ enum Theme {
 @main
 struct DiaryApp: App {
     @StateObject private var store = JournalStore()
+    @StateObject private var reminders = ReminderCenter()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .environmentObject(reminders)
                 .tint(Theme.accent)
         }
     }
