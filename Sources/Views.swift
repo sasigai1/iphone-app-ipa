@@ -6,8 +6,13 @@ import LocalAuthentication
 
 struct RootView: View {
     @EnvironmentObject var store: JournalStore
+    @EnvironmentObject var reminders: ReminderCenter
     @State private var composing = false
     @State private var unlocked = false
+
+    private var writtenDays: Set<Date> {
+        Set(store.entries.map { Calendar.current.startOfDay(for: $0.date) })
+    }
 
     var body: some View {
         ZStack {
@@ -45,6 +50,10 @@ struct RootView: View {
         }
         .onAppear {
             if !store.lockEnabled { unlocked = true }
+            reminders.schedule(writtenDays: writtenDays)
+        }
+        .onChange(of: store.entries.count) { _ in
+            reminders.schedule(writtenDays: writtenDays)
         }
     }
 }
@@ -54,7 +63,19 @@ struct RootView: View {
 struct TimelineView: View {
     @EnvironmentObject var store: JournalStore
     @State private var query = ""
-    @State private var selected: JournalEntry?
+    @State private var target: EditorTarget?
+
+    enum EditorTarget: Identifiable {
+        case new
+        case edit(JournalEntry)
+
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .edit(let entry): return entry.id.uuidString
+            }
+        }
+    }
 
     private var filtered: [JournalEntry] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -79,13 +100,25 @@ struct TimelineView: View {
         return order.map { ($0, map[$0] ?? []) }
     }
 
+    private var hasEntryToday: Bool {
+        store.entries.contains { Calendar.current.isDateInToday($0.date) }
+    }
+
+    private var promptOfDay: String {
+        let index = Calendar.current.component(.day, from: Date()) % ReminderCenter.prompts.count
+        return ReminderCenter.prompts[index]
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                if filtered.isEmpty {
-                    EmptyStateView()
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if !hasEntryToday {
+                        nudgeCard
+                    }
+                    if filtered.isEmpty {
+                        EmptyStateView()
+                    } else {
                         ForEach(groups, id: \.0) { group in
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(group.0)
@@ -94,7 +127,7 @@ struct TimelineView: View {
                                     .padding(.leading, 4)
                                 ForEach(group.1) { entry in
                                     Button {
-                                        selected = entry
+                                        target = .edit(entry)
                                     } label: {
                                         EntryCard(entry: entry)
                                     }
@@ -110,9 +143,9 @@ struct TimelineView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
             }
             .background(Theme.canvas)
             .navigationTitle("我的日记")
@@ -126,10 +159,49 @@ struct TimelineView: View {
                 }
             }
             .searchable(text: $query, prompt: "搜索标题、内容或标签")
-            .sheet(item: $selected) { entry in
-                EditorView(entry: entry)
+            .sheet(item: $target) { item in
+                switch item {
+                case .new:
+                    EditorView(entry: nil)
+                case .edit(let entry):
+                    EditorView(entry: entry)
+                }
             }
         }
+    }
+
+    private var nudgeCard: some View {
+        Button {
+            target = .new
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bell.badge.fill")
+                    .font(.system(size: 19))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.white.opacity(0.2), in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("今天还没写日记")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(promptOfDay)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Text("写两句")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .background(Color.white, in: Capsule())
+            }
+            .padding(13)
+            .background(Theme.gradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: Theme.accent.opacity(0.25), radius: 10, y: 5)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -151,7 +223,7 @@ struct EmptyStateView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 70)
+        .padding(.top, 40)
     }
 }
 
@@ -300,8 +372,8 @@ struct CalendarPage: View {
 
     private var weekdayHeader: some View {
         HStack(spacing: 6) {
-            ForEach(weekdaySymbols, id: \.self) { s in
-                Text(s)
+            ForEach(weekdaySymbols, id: \.self) { symbol in
+                Text(symbol)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
@@ -539,65 +611,6 @@ struct StatsPage: View {
     private func ratio(_ mood: Mood) -> CGFloat {
         let total = max(store.entries.count, 1)
         return CGFloat(store.count(mood: mood)) / CGFloat(total)
-    }
-}
-
-// MARK: - 设置
-
-struct SettingsPage: View {
-    @EnvironmentObject var store: JournalStore
-    @State private var exportURL: URL?
-
-    var body: some View {
-        List {
-            Section("隐私") {
-                Toggle(isOn: $store.lockEnabled) {
-                    Label("面容或密码上锁", systemImage: "lock.fill")
-                }
-            }
-            Section("数据") {
-                Button {
-                    exportURL = makeExport()
-                } label: {
-                    Label("导出备份", systemImage: "square.and.arrow.up")
-                }
-                if let url = exportURL {
-                    ShareLink(item: url) {
-                        Label("分享备份文件", systemImage: "doc.text")
-                    }
-                }
-            }
-            Section("关于") {
-                HStack {
-                    Text("版本")
-                    Spacer()
-                    Text("1.0").foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("日记总数")
-                    Spacer()
-                    Text("\(store.entries.count)").foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("累计字数")
-                    Spacer()
-                    Text("\(store.totalWords)").foregroundStyle(.secondary)
-                }
-            }
-        }
-        .navigationTitle("设置")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func makeExport() -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("diary-backup.json")
-        guard let data = try? JSONEncoder().encode(store.entries) else { return nil }
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
     }
 }
 
