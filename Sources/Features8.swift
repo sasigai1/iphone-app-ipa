@@ -90,7 +90,7 @@ enum EbookFiles {
         let u = url(file)
         var ch: [BookChapter] = []
         if file.lowercased().hasSuffix(".epub") {
-            ch = (try? Data(contentsOf: u)).flatMap { EpubParser.parse($0)?.chapters } ?? []
+            ch = EpubParser.parse(url: u)?.chapters ?? []
         } else {
             ch = (try? Data(contentsOf: u)).map { TxtParser.chapters(TxtParser.decode($0)) } ?? []
         }
@@ -155,6 +155,8 @@ enum TxtParser {
         return out
     }
 }
+
+struct ZipShim { let read: (String) -> Data? }
 
 enum EpubParser {
     struct Result { var title: String; var author: String; var cover: Data?; var chapters: [BookChapter] }
@@ -226,7 +228,34 @@ enum EpubParser {
     }
 
     static func parse(_ data: Data) -> Result? {
-        guard let zip = ZipReader(data: data) else { return nil }
+        guard let z = ZipReader(data: data) else { return nil }
+        return parse(reader: { z.read($0) })
+    }
+
+    /// Apple Books / iCloud often store EPUBs as unpacked folder packages.
+    static func parse(url: URL) -> Result? {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            return parse(reader: { name in
+                let direct = url.appendingPathComponent(name)
+                if let d = try? Data(contentsOf: direct) { return d }
+                // case-insensitive fallback
+                let lower = name.lowercased()
+                if let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
+                    for case let f as URL in e {
+                        let rel = String(f.path.dropFirst(url.path.count + 1))
+                        if rel.lowercased() == lower { return try? Data(contentsOf: f) }
+                    }
+                }
+                return nil
+            })
+        }
+        guard let d = try? Data(contentsOf: url) else { return nil }
+        return parse(d)
+    }
+
+    static func parse(reader zipRead: (String) -> Data?) -> Result? {
+        let zip = ZipShim(read: zipRead)
         guard let cont = zip.read("META-INF/container.xml").map({ String(decoding: $0, as: UTF8.self) }),
               let rootTag = tags(cont, "rootfile").first, let opfPath = attr(rootTag, "full-path"),
               let opf = zip.read(opfPath).map({ String(decoding: $0, as: UTF8.self) }) else { return nil }
@@ -266,14 +295,21 @@ enum BookImporter {
     static func importFile(_ u: URL) -> Book? {
         let ok = u.startAccessingSecurityScopedResource()
         defer { if ok { u.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: u) else { return nil }
         let ext = u.pathExtension.lowercased()
+        var isDir: ObjCBool = false
+        _ = FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
         let name = UUID().uuidString + "." + (ext.isEmpty ? "txt" : ext)
-        do { try data.write(to: EbookFiles.url(name)) } catch { return nil }
+        var data = Data()
+        if isDir.boolValue {
+            guard ext == "epub" else { return nil }
+            do { try FileManager.default.copyItem(at: u, to: EbookFiles.url(name)) } catch { return nil }
+        } else {
+            guard let d = try? Data(contentsOf: u) else { return nil }
+            data = d
+            do { try data.write(to: EbookFiles.url(name)) } catch { return nil }
+        }
         var b = Book()
-        var t = u.deletingPathExtension().lastPathComponent
-        if t.count > 37, t[t.index(t.startIndex, offsetBy: 36)] == "-" { t = String(t.dropFirst(37)) }
-        b.title = t
+        b.title = u.deletingPathExtension().lastPathComponent
         b.status = 0
         b.color = Int.random(in: 0..<Theme.covers.count)
         b.file = name
@@ -290,7 +326,7 @@ enum BookImporter {
                 if let jpg = img.jpegData(compressionQuality: 0.8) { b.cover = NoteStore.saveImage(jpg) }
             }
         case "epub":
-            guard let r = EpubParser.parse(data), !r.chapters.isEmpty else { EbookFiles.remove(name); return nil }
+            guard let r = EpubParser.parse(url: EbookFiles.url(name)), !r.chapters.isEmpty else { EbookFiles.remove(name); return nil }
             b.title = r.title
             b.author = r.author
             if let c = r.cover { b.cover = NoteStore.saveImage(c) }
@@ -324,6 +360,31 @@ struct BookImportButton: View {
     }
 }
 
+struct DocumentPicker: UIViewControllerRepresentable {
+    let types: [UTType]
+    let onPick: ([URL]) -> Void
+
+    func makeCoordinator() -> Coord { Coord(onPick: onPick) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // asCopy: the system downloads iCloud files and hands us local copies.
+        let vc = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        vc.allowsMultipleSelection = true
+        vc.shouldShowFileExtensions = true
+        vc.delegate = context.coordinator
+        return vc
+    }
+
+    func updateUIViewController(_ vc: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coord: NSObject, UIDocumentPickerDelegate {
+        let onPick: ([URL]) -> Void
+        init(onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { onPick(urls) }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
+    }
+}
+
 struct BookImportHost: ViewModifier {
     @ObservedObject private var life = Life5.shared
     @State private var picking = false
@@ -331,50 +392,24 @@ struct BookImportHost: ViewModifier {
     @State private var message: String?
 
     private var types: [UTType] {
-        var t: [UTType] = [.plainText, .text, .utf8PlainText, .pdf, .epub, .data]
-        if let e = UTType(filenameExtension: "txt") { t.append(e) }
+        var t: [UTType] = [.plainText, .text, .pdf, .epub]
         if let e = UTType("org.idpf.epub-container") { t.append(e) }
+        if let e = UTType(filenameExtension: "txt") { t.append(e) }
+        if let e = UTType("org.idpf.epub-folder") { t.append(e) }
+        t.append(.package)
+        t.append(.data)
         return t
     }
 
     func body(content: Content) -> some View {
         content
             .onReceive(NotificationCenter.default.publisher(for: .moyeImportBooks)) { _ in picking = true }
-            .fileImporter(isPresented: $picking, allowedContentTypes: types, allowsMultipleSelection: true) { r in
-                switch r {
-                case .failure(let e): message = "无法打开文件：\(e.localizedDescription)"
-                case .success(let urls):
-                    importing = true
-                    // Copy while the security scope is open, on this thread, before handing off.
-                    var staged: [URL] = []
-                    for u in urls {
-                        let ok = u.startAccessingSecurityScopedResource()
-                        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + u.lastPathComponent)
-                        var copied = false
-                        let coord = NSFileCoordinator()
-                        var cerr: NSError?
-                        coord.coordinate(readingItemAt: u, options: .withoutChanges, error: &cerr) { src in
-                            copied = (try? FileManager.default.copyItem(at: src, to: tmp)) != nil
-                        }
-                        if !copied, let d = try? Data(contentsOf: u) { copied = (try? d.write(to: tmp)) != nil }
-                        if ok { u.stopAccessingSecurityScopedResource() }
-                        if copied { staged.append(tmp) }
-                    }
-                    let unreadable = urls.count - staged.count
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        var books: [Book] = []
-                        var failed = unreadable
-                        for u in staged {
-                            if let b = BookImporter.importFile(u) { books.append(b) } else { failed += 1 }
-                            try? FileManager.default.removeItem(at: u)
-                        }
-                        DispatchQueue.main.async {
-                            life.data.books.append(contentsOf: books)
-                            importing = false
-                            message = "已导入 \(books.count) 本" + (failed > 0 ? "，\(failed) 个文件无法识别" : "")
-                        }
-                    }
+            .sheet(isPresented: $picking) {
+                DocumentPicker(types: types) { urls in
+                    picking = false
+                    handle(urls)
                 }
+                .ignoresSafeArea()
             }
             .overlay {
                 if importing {
@@ -385,6 +420,28 @@ struct BookImportHost: ViewModifier {
             .alert("导入书籍", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                 Button("好") { message = nil }
             } message: { Text(message ?? "") }
+    }
+
+    private func handle(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        importing = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            var books: [Book] = []
+            var failedNames: [String] = []
+            for u in urls {
+                let ok = u.startAccessingSecurityScopedResource()
+                let b = BookImporter.importFile(u)
+                if ok { u.stopAccessingSecurityScopedResource() }
+                if let b = b { books.append(b) } else { failedNames.append(u.lastPathComponent) }
+            }
+            DispatchQueue.main.async {
+                life.data.books.append(contentsOf: books)
+                importing = false
+                var m = "已导入 \(books.count) 本"
+                if !failedNames.isEmpty { m += "\n无法识别：" + failedNames.prefix(3).joined(separator: "、") }
+                message = m
+            }
+        }
     }
 }
 
@@ -1338,9 +1395,14 @@ enum EmbyPlayback {
         ]
     }
 
-    static func resolve(_ id: String, startTicks: Int64) async -> Source? {
+    /// Ordered list of URLs to try: direct (if iOS can decode), server TranscodingUrl, constructed HLS, raw static stream.
+    static func candidates(_ id: String, startTicks: Int64) async -> [Source] {
         let c = EmbyClient.shared
-        let session = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        var out: [Source] = []
+        var psid = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        var msid = id
+        var container = ""
+        var transcodeURL: URL?
         if let u = c.url("/Items/\(id)/PlaybackInfo", ["UserId": c.userId, "StartTimeTicks": "\(startTicks)", "IsPlayback": "true", "AutoOpenLiveStream": "true", "MaxStreamingBitrate": "40000000"]) {
             var r = URLRequest(url: u)
             r.httpMethod = "POST"
@@ -1352,22 +1414,25 @@ enum EmbyPlayback {
             if let (d, _) = try? await URLSession.shared.data(for: r),
                let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
                let sources = j["MediaSources"] as? [[String: Any]], let ms = sources.first {
-                let psid = (j["PlaySessionId"] as? String) ?? session
-                let msid = (ms["Id"] as? String) ?? id
-                let container = ((ms["Container"] as? String) ?? "").lowercased()
-                let direct = (ms["SupportsDirectPlay"] as? Bool ?? false) || (ms["SupportsDirectStream"] as? Bool ?? false)
-                let okContainer = ["mp4", "m4v", "mov"].contains(where: { container.contains($0) })
-                if direct && okContainer, let u = c.url("/Videos/\(id)/stream.\(container.split(separator: ",").first.map(String.init) ?? "mp4")", ["Static": "true", "MediaSourceId": msid, "PlaySessionId": psid, "DeviceId": c.deviceId]) {
-                    return Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)
-                }
-                if let t = ms["TranscodingUrl"] as? String, !t.isEmpty, let u = absolute(t) {
-                    return Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)
-                }
-                if let u = hls(id, msid, psid) { return Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid) }
+                psid = (j["PlaySessionId"] as? String) ?? psid
+                msid = (ms["Id"] as? String) ?? id
+                container = ((ms["Container"] as? String) ?? "").lowercased()
+                if let t = ms["TranscodingUrl"] as? String, !t.isEmpty { transcodeURL = absolute(t) }
             }
         }
-        if let u = hls(id, id, session) { return Source(url: u, transcoding: true, mediaSourceId: id, playSessionId: session) }
-        return nil
+        let first = container.split(separator: ",").first.map(String.init) ?? ""
+        let nativeContainer = ["mp4", "m4v", "mov"].contains(first)
+        let direct = c.url("/Videos/\(id)/stream" + (first.isEmpty ? "" : ".\(first)"), ["Static": "true", "MediaSourceId": msid, "PlaySessionId": psid, "DeviceId": c.deviceId])
+        if nativeContainer, let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
+        if let u = transcodeURL { out.append(Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)) }
+        if let u = hls(id, msid, psid) { out.append(Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)) }
+        if !nativeContainer, let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
+        return out
+    }
+
+    /// Plain direct-file URL for external players (Infuse / VLC / nPlayer).
+    static func externalURL(_ id: String) -> URL? {
+        EmbyClient.shared.url("/Videos/\(id)/stream", ["Static": "true", "DeviceId": EmbyClient.shared.deviceId])
     }
 
     static func hls(_ id: String, _ msid: String, _ psid: String) -> URL? {
@@ -1394,85 +1459,97 @@ enum EmbyPlayback {
 final class EmbyPlayerModel: ObservableObject {
     let player = AVPlayer()
     @Published var loading = true
-    @Published var error: String?
+    @Published var failed = false
     @Published var mode = ""
+    @Published var log: [String] = []
     private var timer: Any?
-    private var item: EmbyItem?
-    private var source: EmbyPlayback.Source?
-    private var triedHLS = false
+    private(set) var item: EmbyItem?
+    private var queue: [EmbyPlayback.Source] = []
+    private var resumeTicks: Int64 = 0
     private var statusObs: NSKeyValueObservation?
     private var watchdog: DispatchWorkItem?
+    private var attempt = 0
 
     func start(_ it: EmbyItem) {
         item = it
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
-        let resume = it.UserData?.PlaybackPositionTicks ?? 0
+        resumeTicks = it.UserData?.PlaybackPositionTicks ?? 0
         Task {
-            let src = await EmbyPlayback.resolve(it.Id, startTicks: resume)
+            let list = await EmbyPlayback.candidates(it.Id, startTicks: resumeTicks)
             await MainActor.run {
-                guard let src = src else { self.fail("无法获取播放地址，请检查服务器连接"); return }
-                self.source = src
-                self.triedHLS = src.transcoding
-                self.play(src.url, resume: resume, transcoding: src.transcoding)
+                self.queue = list
+                self.next()
             }
         }
-        timer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 15, preferredTimescale: 1), queue: .main) { [weak self] t in
-            guard let self = self, let it = self.item, t.seconds > 1 else { return }
-            EmbyClient.shared.report(it.Id, ticks: Int64(t.seconds * 10_000_000), stopped: false)
+        if timer == nil {
+            timer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 15, preferredTimescale: 1), queue: .main) { [weak self] t in
+                guard let self = self, let it = self.item, t.seconds > 1 else { return }
+                EmbyClient.shared.report(it.Id, ticks: Int64(t.seconds * 10_000_000), stopped: false)
+            }
         }
     }
 
-    private func fail(_ m: String) {
-        loading = false
-        error = m
+    func retry() {
+        guard let it = item else { return }
+        failed = false
+        log = []
+        attempt = 0
+        start(it)
     }
 
-    private func fallback(resume: Int64) {
-        guard !triedHLS, let it = item else {
-            fail("这个视频播放失败。可能是服务器没开转码权限，或格式不受支持。")
+    private func next() {
+        watchdog?.cancel()
+        guard !queue.isEmpty else {
+            loading = false
+            failed = true
+            player.replaceCurrentItem(with: nil)
             return
         }
-        triedHLS = true
-        let msid = source?.mediaSourceId ?? it.Id
-        let psid = source?.playSessionId ?? UUID().uuidString
-        play(EmbyPlayback.hls(it.Id, msid, psid), resume: resume, transcoding: true)
+        let src = queue.removeFirst()
+        attempt += 1
+        play(src)
     }
 
-    private func play(_ url: URL?, resume: Int64, transcoding: Bool) {
-        guard let u = url else { fail("播放地址无效"); return }
-        mode = transcoding ? "转码" : "直连"
+    private func note(_ src: EmbyPlayback.Source, _ msg: String) {
+        let kind = src.transcoding ? "转码" : "直连"
+        log.append("\(kind)：\(msg)")
+    }
+
+    private func play(_ src: EmbyPlayback.Source) {
+        mode = src.transcoding ? "转码" : "直连"
         loading = true
-        error = nil
         let c = EmbyClient.shared
-        let asset = AVURLAsset(url: u, options: ["AVURLAssetHTTPHeaderFieldsKey": ["X-Emby-Token": c.token, "X-Emby-Authorization": c.authorization]])
+        let asset = AVURLAsset(url: src.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["X-Emby-Token": c.token, "X-Emby-Authorization": c.authorization]])
         let pi = AVPlayerItem(asset: asset)
+        let resume = resumeTicks
         statusObs = pi.observe(\.status, options: [.new]) { [weak self] p, _ in
             DispatchQueue.main.async {
-                guard let self = self else { return }
+                guard let self = self, self.player.currentItem === p else { return }
                 switch p.status {
                 case .readyToPlay:
                     self.loading = false
                     self.watchdog?.cancel()
                 case .failed:
-                    self.watchdog?.cancel()
-                    let pos = Int64(max(0, self.player.currentTime().seconds) * 10_000_000)
-                    self.fallback(resume: max(pos, resume))
+                    let e = p.error as NSError?
+                    var msg = e?.localizedDescription ?? "未知错误"
+                    if let u = e?.userInfo[NSUnderlyingErrorKey] as? NSError { msg += "（\(u.domain) \(u.code)）" } else if let e = e { msg += "（\(e.code)）" }
+                    self.note(src, msg)
+                    self.next()
                 default: break
                 }
             }
         }
         player.replaceCurrentItem(with: pi)
-        // HLS transcodes already start at StartTimeTicks; direct streams need a seek.
-        if resume > 0 && !transcoding { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
+        if resume > 0 && !src.transcoding { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
         player.play()
-        watchdog?.cancel()
         let w = DispatchWorkItem { [weak self] in
-            guard let self = self, pi.status != .readyToPlay else { return }
-            self.fallback(resume: resume)
+            guard let self = self, self.player.currentItem === pi, pi.status != .readyToPlay else { return }
+            self.note(src, "加载超时")
+            self.next()
         }
         watchdog = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + (transcoding ? 30 : 12), execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (src.transcoding ? 40 : 15), execute: w)
     }
 
     func stop() {
@@ -1487,35 +1564,44 @@ final class EmbyPlayerModel: ObservableObject {
     }
 }
 
+enum ExternalPlayer: CaseIterable {
+    case infuse, vlc, nplayer, senplayer
+    var name: String {
+        switch self { case .infuse: return "Infuse"; case .vlc: return "VLC"; case .nplayer: return "nPlayer"; case .senplayer: return "SenPlayer" }
+    }
+    func link(_ u: URL) -> URL? {
+        let enc = u.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        switch self {
+        case .infuse: return URL(string: "infuse://x-callback-url/play?url=\(enc)")
+        case .vlc: return URL(string: "vlc-x-callback://x-callback-url/stream?url=\(enc)")
+        case .nplayer: return URL(string: "nplayer-" + u.absoluteString)
+        case .senplayer: return URL(string: "SenPlayer://x-callback-url/play?url=\(enc)")
+        }
+    }
+}
+
 struct EmbyPlayerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let item: EmbyItem
     @StateObject private var model = EmbyPlayerModel()
+    @State private var copied = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
             VideoPlayer(player: model.player).ignoresSafeArea()
-            if model.loading && model.error == nil {
+            if model.loading && !model.failed {
                 VStack(spacing: 10) {
                     ProgressView().tint(.white)
-                    Text(model.mode.isEmpty ? "正在连接…" : "正在加载（\(model.mode)）").font(.footnote).foregroundColor(.white.opacity(0.8))
+                    Text(model.mode.isEmpty ? "正在连接…" : "正在加载（\(model.mode)）").font(.footnote).foregroundColor(.white.opacity(0.85))
                 }
                 .padding(18)
                 .glassCard(radius: 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
             }
-            if let e = model.error {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.title).foregroundColor(.yellow)
-                    Text(e).multilineTextAlignment(.center).foregroundColor(.white)
-                }
-                .padding(22)
-                .glassCard(radius: 22)
-                .padding(30)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            if model.failed { failPanel }
             Button {
                 model.stop()
                 dismiss()
@@ -1527,6 +1613,43 @@ struct EmbyPlayerView: View {
         }
         .onAppear { model.start(item) }
         .onDisappear { model.stop() }
+    }
+
+    private var failPanel: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.title).foregroundColor(.yellow)
+            Text("墨页内置播放器放不了这个视频").font(.headline).foregroundColor(.white)
+            if !model.log.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.log, id: \.self) { Text($0).font(.caption2).foregroundColor(.white.opacity(0.75)) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("可以换个播放器打开，进度仍在 Emby 上").font(.footnote).foregroundColor(.white.opacity(0.8))
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(ExternalPlayer.allCases, id: \.self) { p in
+                    Button {
+                        if let u = EmbyPlayback.externalURL(item.Id), let l = p.link(u) {
+                            model.stop()
+                            openURL(l) { ok in if !ok { copied = false } }
+                        }
+                    } label: { Text(p.name).frame(maxWidth: .infinity) }
+                        .buttonStyle(GlassButtonStyle())
+                }
+            }
+            HStack(spacing: 10) {
+                Button {
+                    if let u = EmbyPlayback.externalURL(item.Id) { UIPasteboard.general.string = u.absoluteString; copied = true }
+                } label: { Label(copied ? "已复制" : "复制链接", systemImage: "doc.on.doc").frame(maxWidth: .infinity) }
+                    .buttonStyle(GlassButtonStyle())
+                Button { model.retry() } label: { Label("重试", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }
+                    .buttonStyle(GlassButtonStyle(prominent: true))
+            }
+        }
+        .padding(22)
+        .glassCard(radius: 26)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
