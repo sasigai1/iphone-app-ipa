@@ -254,7 +254,7 @@ enum EpubParser {
         return parse(d)
     }
 
-    static func parse(reader zipRead: (String) -> Data?) -> Result? {
+    static func parse(reader zipRead: @escaping (String) -> Data?) -> Result? {
         let zip = ZipShim(read: zipRead)
         guard let cont = zip.read("META-INF/container.xml").map({ String(decoding: $0, as: UTF8.self) }),
               let rootTag = tags(cont, "rootfile").first, let opfPath = attr(rootTag, "full-path"),
