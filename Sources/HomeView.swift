@@ -14,6 +14,10 @@ struct HomeView: View {
     @State private var showCapture = false
     @State private var showPalette = false
     @ObservedObject private var cards = CardStore.shared
+    @ObservedObject private var router = MoyeRouter.shared
+    @State private var showVoice = false
+    @State private var showReview = false
+    @AppStorage("petHidden") private var petHidden = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -22,10 +26,14 @@ struct HomeView: View {
                     VStack(spacing: 14) {
                         HomeHero(greeting: greeting + " 👋")
                         QuickGrid(items: gridItems)
+                        if !petHidden {
+                            InkPetCard { path.append(store.todayJournal()) }
+                        }
                         Life7Strip { k in path.append(k) }
                         TodayPanel(onOpen: { id in path.append(id) }, onDaily: {
                             NotificationCenter.default.post(name: .moyeSwitchTab, object: 4)
                         })
+                        OnThisDayCard(onOpen: { id in path.append(id) }, onReview: { showReview = true })
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -150,9 +158,21 @@ struct HomeView: View {
             .listStyle(.insetGrouped)
             .ambient()
             .overlay(alignment: .bottomTrailing) {
-                GlassFAB(symbol: "plus", onLongPress: { showCapture = true }) {
-                    let id = store.create()
-                    DispatchQueue.main.async { path.append(id) }
+                VStack(spacing: 12) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .glassSurface(Circle(), interactive: false)
+                        .contentShape(Circle())
+                        .onTapGesture {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showVoice = true
+                        }
+                    GlassFAB(symbol: "plus", onLongPress: { showCapture = true }) {
+                        let id = store.create()
+                        DispatchQueue.main.async { path.append(id) }
+                    }
                 }
                 .padding(.trailing, 20)
                 .padding(.bottom, 18)
@@ -165,7 +185,19 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew9View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew10View() }
+            .sheet(isPresented: $showVoice) { VoiceNoteView { id in path.append(id) } }
+            .sheet(isPresented: $showReview) { ReviewDeckView { id in path.append(id) } }
+            .onReceive(router.$action) { a in
+                guard let a = a else { return }
+                router.action = nil
+                handleRoute(a)
+            }
+            .onReceive(router.$openPage) { id in
+                guard let id = id else { return }
+                router.openPage = nil
+                if store.page(id) != nil { path = NavigationPath(); path.append(id) }
+            }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -177,8 +209,9 @@ struct HomeView: View {
                 FullBackup.autoBackupIfNeeded()
                 TrashCleaner.run(store)
                 Life7.shared.rollSubscriptions()
-                if seenVersion != "9.0" {
-                    seenVersion = "9.0"
+                SpotlightIndex.sync(store.pages)
+                if seenVersion != "10.0" {
+                    seenVersion = "10.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -313,6 +346,21 @@ struct HomeView: View {
             GridAction(icon: "character.book.closed.fill", title: "生词本", color: Color(red: 0.2, green: 0.6, blue: 0.55)) { path.append("vocab") },
             GridAction(icon: "square.grid.3x3.fill", title: "百宝箱", color: Color(red: 0.95, green: 0.65, blue: 0.1)) { path.append("toolbox") }
         ]
+    }
+
+    private func handleRoute(_ a: String) {
+        switch a {
+        case "new": path.append(store.create())
+        case "journal": path.append(store.todayJournal())
+        case "capture": showCapture = true
+        case "voice": showVoice = true
+        case "focus": showFocus = true
+        case "captureText":
+            let t = UserDefaults.standard.string(forKey: MoyeRouter.pendingTextKey) ?? ""
+            UserDefaults.standard.removeObject(forKey: MoyeRouter.pendingTextKey)
+            if !t.isEmpty { path.append(store.capture(t, target: 0, asTodo: false)) }
+        default: break
+        }
     }
 
     private func openDaily(_ seg: Int) {

@@ -1,8 +1,10 @@
 import SwiftUI
 import LocalAuthentication
+import CoreSpotlight
 
 @main
 struct MoyeApp: App {
+    @UIApplicationDelegateAdaptor(MoyeAppDelegate.self) private var appDelegate
     @StateObject private var store = NoteStore()
     @AppStorage("appearance") private var appearance = 0
     @AppStorage("accent") private var accent = 0
@@ -27,6 +29,8 @@ struct MoyeApp: App {
 }
 
 struct RootView: View {
+    @EnvironmentObject var store: NoteStore
+    @ObservedObject private var router = MoyeRouter.shared
     @AppStorage("lockEnabled") private var lockEnabled = false
     @State private var locked = true
     @State private var tab = 0
@@ -46,7 +50,18 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .moyeSwitchTab)) { n in
             if let t = n.object as? Int { withAnimation { tab = t } }
         }
+        .onContinueUserActivity(CSSearchableItemActionType) { act in
+            if let s = act.userInfo?[CSSearchableItemActivityIdentifier] as? String, let id = UUID(uuidString: s) {
+                tab = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.openPage = id }
+            }
+        }
+        .onChange(of: router.action) { a in
+            if a != nil && tab != 0 { withAnimation { tab = 0 } }
+        }
         .onChange(of: phase) { p in
+            if p == .active { MoyeRouter.shared.consumePending() }
+            if p == .background { SpotlightIndex.sync(store.pages) }
             if p == .background && lockEnabled { locked = true }
             if p == .background { PrivacyStore.shared.lockAll() }
         }

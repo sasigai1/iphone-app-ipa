@@ -534,6 +534,8 @@ struct FocusTimerView: View {
                     .padding(.horizontal, 40)
                 }
 
+                NoisePicker()
+
                 HStack(spacing: 16) {
                     if running {
                         Button(role: .destructive) { stop(completed: false) } label: {

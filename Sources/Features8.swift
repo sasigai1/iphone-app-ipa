@@ -462,6 +462,8 @@ struct EbookReaderView: View {
     @AppStorage("readerSerif") private var serif = true
     @State private var toast: String?
     @State private var visible = Set<Int>()
+    @StateObject private var listener = BookListener()
+    @State private var openedAt = Date()
 
     private func updateTop() {
         guard let m = visible.min(), m != topPara else { return }
@@ -502,12 +504,18 @@ struct EbookReaderView: View {
                                     .foregroundColor(fg)
                                     .lineSpacing(fontSize * 0.55)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.accentColor.opacity(listener.active && listener.para == i ? 0.16 : 0))
+                                            .padding(-6)
+                                    )
                                     .id(i)
                                     .onAppear { visible.insert(i); updateTop() }
                                     .onDisappear { visible.remove(i); updateTop() }
                                     .contextMenu {
                                         Button { addQuote(p) } label: { Label("加入书摘", systemImage: "quote.bubble") }
                                         Button { UIPasteboard.general.string = p } label: { Label("复制", systemImage: "doc.on.doc") }
+                                        Button { listener.start(chapters[chapter].paras, from: i) } label: { Label("从这里朗读", systemImage: "headphones") }
                                     }
                             }
                             HStack {
@@ -531,6 +539,9 @@ struct EbookReaderView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo(topPara > 0 ? topPara : -1, anchor: .top) }
                     }
                     .onChange(of: chapter) { _ in proxy.scrollTo(-1, anchor: .top) }
+                    .onChange(of: listener.para) { p in
+                        if listener.active { withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(p, anchor: .center) } }
+                    }
                     .sheet(isPresented: $showTOC) {
                         NavigationStack {
                             ScrollViewReader { tp in
@@ -560,6 +571,7 @@ struct EbookReaderView: View {
                 }
             }
             if showBars && !chapters.isEmpty { bars }
+            if listener.active && !chapters.isEmpty { listenBar }
             if let t = toast {
                 Text(t).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 10)
                     .glassCapsule(interactive: false)
@@ -567,8 +579,58 @@ struct EbookReaderView: View {
             }
         }
         .statusBarHidden(!showBars)
-        .onAppear(perform: load)
-        .onDisappear(perform: savePos)
+        .onAppear {
+            openedAt = Date()
+            load()
+            listener.onChapterEnd = {
+                if chapter < chapters.count - 1 {
+                    chapter += 1
+                    topPara = 0
+                    savePos()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if chapter < chapters.count { listener.start(chapters[chapter].paras, from: 0) }
+                    }
+                } else {
+                    listener.stop()
+                }
+            }
+        }
+        .onDisappear {
+            listener.stop()
+            ReadingClock.add(Int(Date().timeIntervalSince(openedAt)))
+            savePos()
+        }
+    }
+
+    private var listenBar: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 16) {
+                Image(systemName: "headphones").foregroundColor(.accentColor)
+                Text("第 \(listener.para + 1) 段").font(.caption.monospacedDigit())
+                Spacer()
+                Menu {
+                    ForEach([0.8, 1.0, 1.2, 1.5, 1.8], id: \.self) { r in
+                        Button { listener.rate = r } label: { Text(String(format: "%.1f×", r)) }
+                    }
+                } label: { Text(String(format: "%.1f×", listener.rate)).font(.caption.weight(.semibold)) }
+                Menu {
+                    Button("不定时") { listener.sleepAt = nil }
+                    ForEach([15, 30, 60], id: \.self) { m in
+                        Button("\(m) 分钟后停止") { listener.sleepAt = Date().addingTimeInterval(Double(m) * 60) }
+                    }
+                } label: { Image(systemName: listener.sleepAt == nil ? "moon" : "moon.fill") }
+                Button { listener.toggle() } label: { Image(systemName: listener.paused ? "play.fill" : "pause.fill") }
+                Button { listener.stop() } label: { Image(systemName: "stop.fill") }
+            }
+            .font(.headline)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .glassCapsule(interactive: false)
+            .padding(.horizontal, 16)
+            .padding(.bottom, showBars ? 150 : 20)
+        }
+        .foregroundColor(.primary)
     }
 
     private var bars: some View {
@@ -578,6 +640,9 @@ struct EbookReaderView: View {
                 Spacer()
                 Text(chapters[chapter].title).font(.subheadline.weight(.semibold)).lineLimit(1)
                 Spacer()
+                Button {
+                    if listener.active { listener.stop() } else { listener.start(chapters[chapter].paras, from: min(topPara, max(0, chapters[chapter].paras.count - 1))) }
+                } label: { Image(systemName: listener.active ? "headphones.circle.fill" : "headphones").font(.headline).frame(width: 40, height: 40) }
                 Button { showTOC = true } label: { Image(systemName: "list.bullet").font(.headline).frame(width: 40, height: 40) }
             }
             .padding(.horizontal, 8)
@@ -591,6 +656,8 @@ struct EbookReaderView: View {
                     Slider(value: Binding(get: { Double(chapter) }, set: { chapter = Int($0); topPara = 0; savePos() }), in: 0...Double(max(1, chapters.count - 1)), step: 1)
                     Text("\(Int(Double(chapter + 1) / Double(chapters.count) * 100))%").font(.caption.monospacedDigit())
                 }
+                Text("今日已读 \((ReadingClock.today + Int(Date().timeIntervalSince(openedAt))) / 60) 分钟 · 近 7 天 \(ReadingClock.week / 60) 分钟")
+                    .font(.caption2).foregroundStyle(.secondary)
                 HStack(spacing: 18) {
                     Button { fontSize = max(13, fontSize - 1) } label: { Text("A−").font(.headline) }
                     Button { fontSize = min(30, fontSize + 1) } label: { Text("A+").font(.headline) }
