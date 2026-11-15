@@ -511,7 +511,7 @@ struct BodyTrackerView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("身体数据")
     }
 
@@ -741,7 +741,7 @@ struct CapsuleListView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("时间胶囊")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -971,7 +971,7 @@ struct ShareCardSheet: View {
                     .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
                     .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .ambient()
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     Picker("", selection: $style) {
@@ -1303,7 +1303,7 @@ struct AchievementsView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("成就与年度报告")
     }
 }

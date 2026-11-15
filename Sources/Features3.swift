@@ -488,7 +488,7 @@ struct GraphView: View {
             let pages = visible
             let neighbors = neighborSet()
             ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
+                AmbientBackground().ignoresSafeArea()
                 Canvas { ctx, _ in
                     for e in edges {
                         guard let a = positions[e.a], let b = positions[e.b] else { continue }
@@ -548,7 +548,7 @@ struct GraphView: View {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Capsule().fill(.ultraThinMaterial))
+                            .glassCapsule()
                             .padding(.bottom, 10)
                     }
                 }
@@ -1332,7 +1332,7 @@ struct QuickCaptureView: View {
                 .card()
             }
             .padding()
-            .background(Color(.systemGroupedBackground))
+            .ambient()
             .navigationTitle("快速记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1556,7 +1556,7 @@ struct StatsDashboard: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("数据看板")
     }
 

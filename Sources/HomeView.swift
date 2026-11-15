@@ -30,6 +30,7 @@ struct HomeView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 }
+                .glassRow()
 
                 if showHeatmap {
                     Section {
@@ -37,6 +38,7 @@ struct HomeView: View {
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
+                    .glassRow()
                 }
 
                 if !store.recents.isEmpty {
@@ -47,6 +49,7 @@ struct HomeView: View {
                     } header: {
                         Text("最近编辑")
                     }
+                    .glassRow()
                 }
 
                 if !store.favorites.isEmpty {
@@ -65,6 +68,7 @@ struct HomeView: View {
                             }
                         }
                     }
+                    .glassRow()
                 }
 
                 Section {
@@ -94,6 +98,7 @@ struct HomeView: View {
                         }
                     }
                 }
+                .glassRow()
 
                 if !store.allTags.isEmpty {
                     Section {
@@ -122,6 +127,7 @@ struct HomeView: View {
                             }
                         }
                     }
+                    .glassRow()
                 }
 
                 Section {
@@ -139,8 +145,19 @@ struct HomeView: View {
                     }
                     .foregroundColor(.primary)
                 }
+                .glassRow()
             }
             .listStyle(.insetGrouped)
+            .ambient()
+            .overlay(alignment: .bottomTrailing) {
+                GlassFAB(symbol: "plus") { path.append(store.create()) }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        showCapture = true
+                    })
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 18)
+            }
             .navigationTitle("墨页")
             .navigationDestination(for: UUID.self) { id in
                 PageScreen(pageID: id)
@@ -149,7 +166,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew8View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew9View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -161,8 +178,8 @@ struct HomeView: View {
                 FullBackup.autoBackupIfNeeded()
                 TrashCleaner.run(store)
                 Life7.shared.rollSubscriptions()
-                if seenVersion != "8.0" {
-                    seenVersion = "8.0"
+                if seenVersion != "9.0" {
+                    seenVersion = "9.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -225,7 +242,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("8.0 新功能", systemImage: "sparkles")
+                            Label("9.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -345,7 +362,7 @@ struct HomeView: View {
             PaletteAction(title: "随机漫步", symbol: "shuffle", keywords: "random wander suiji") { path.append("wander") },
             PaletteAction(title: "标签管理", symbol: "number.square", keywords: "tags biaoqian") { path.append("tags") },
             PaletteAction(title: "Emby 媒体库", symbol: "play.rectangle.on.rectangle", keywords: "emby jellyfin") { path.append("emby") },
-            PaletteAction(title: "8.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "9.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 

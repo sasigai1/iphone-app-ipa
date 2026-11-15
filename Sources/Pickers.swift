@@ -216,7 +216,7 @@ struct TemplatePicker: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .ambient()
             .navigationTitle("模板库")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

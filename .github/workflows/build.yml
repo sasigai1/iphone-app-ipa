@@ -18,6 +18,12 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Select Xcode 26
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using $X"
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+
       - name: Xcode version
         run: xcodebuild -version
 
@@ -122,6 +128,6 @@ jobs:
       - name: Publish release with ipa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: moye-v8.0-${{ github.run_number }}
+          tag_name: moye-v9.0-${{ github.run_number }}
           name: 墨页 Notes IPA
           files: Moye.ipa

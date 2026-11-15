@@ -14,6 +14,7 @@ struct SearchView: View {
                             NavigationLink(value: p.id) { PageLabel(page: p) }
                         }
                     }
+                    .glassRow()
                 } else {
                     let results = store.search(query)
                     if results.isEmpty {
@@ -38,10 +39,12 @@ struct SearchView: View {
                                 }
                             }
                         }
+                        .glassRow()
                     }
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标题、正文、任务，或 #标签")
+            .ambient()
             .navigationTitle("搜索")
             .navigationDestination(for: UUID.self) { id in
                 PageScreen(pageID: id)
@@ -107,10 +110,12 @@ struct TasksOverview: View {
                                 Text("\(group.first?.pageIcon ?? "") \(group.first?.pageTitle ?? "")")
                             }
                         }
+                        .glassRow()
                     }
                 }
             }
             .listStyle(.insetGrouped)
+            .ambient()
             .navigationTitle("待办")
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -184,6 +189,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                GlassAppearanceSection()
                 Section {
                     HStack(spacing: 14) {
                         Text("✒️")
@@ -200,6 +206,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .glassRow()
 
                 Section("外观") {
                     Picker("主题", selection: $appearance) {
@@ -256,6 +263,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+                .glassRow()
 
                 Section("编辑器") {
                     Toggle(isOn: $mdShortcuts) {
@@ -282,6 +290,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .glassRow()
 
                 Section("主页") {
                     Toggle(isOn: $showHeatmap) {
@@ -301,12 +310,14 @@ struct SettingsView: View {
                     LabeledContent("今日专注", value: "\(store.focusToday) 分钟")
                     LabeledContent("标签数", value: "\(store.allTags.count)")
                 }
+                .glassRow()
 
                 Section("隐私") {
                     Toggle(isOn: $lockEnabled) {
                         Label("面容 ID / 密码锁", systemImage: "faceid")
                     }
                 }
+                .glassRow()
 
                 Section("数据") {
                     NavigationLink {
@@ -349,12 +360,15 @@ struct SettingsView: View {
                     }
                     .disabled(store.trashed.isEmpty)
                 }
+                .glassRow()
 
                 Section("关于") {
-                    LabeledContent("版本", value: "8.0")
+                    LabeledContent("版本", value: "9.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
+                .glassRow()
             }
+            .ambient()
             .navigationTitle("设置")
             .confirmationDialog("彻底删除废纸篓里的页面？", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("删除", role: .destructive) { store.emptyTrash() }

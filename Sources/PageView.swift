@@ -226,7 +226,7 @@ struct PageEditor: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
+                            .glassCapsule()
                     }
                     .padding(12)
                 }
@@ -241,7 +241,7 @@ struct PageEditor: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
+                            .glassCapsule()
                     }
                     .buttonStyle(.plain)
                     .padding(12)

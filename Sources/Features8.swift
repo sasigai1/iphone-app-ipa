@@ -463,7 +463,7 @@ struct EbookReaderView: View {
             if showBars && !chapters.isEmpty { bars }
             if let t = toast {
                 Text(t).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .glassCapsule(interactive: false)
                     .transition(.opacity)
             }
         }
@@ -481,8 +481,10 @@ struct EbookReaderView: View {
                 Spacer()
                 Button { showTOC = true } label: { Image(systemName: "list.bullet").font(.headline).frame(width: 40, height: 40) }
             }
-            .padding(.horizontal, 10)
-            .background(.ultraThinMaterial)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .glassCard(radius: 26)
+            .padding(.horizontal, 12)
             Spacer()
             VStack(spacing: 12) {
                 HStack {
@@ -504,8 +506,10 @@ struct EbookReaderView: View {
                     }
                 }
             }
-            .padding(16)
-            .background(.ultraThinMaterial)
+            .padding(18)
+            .glassCard(radius: 28)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
         }
         .foregroundColor(.primary)
     }
@@ -720,7 +724,7 @@ final class EmbyClient: ObservableObject {
     init() { connected = !token.isEmpty && !server.isEmpty }
 
     private var authHeader: String {
-        "MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"8.0\"" + (token.isEmpty ? "" : ", Token=\"\(token)\"")
+        "MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"9.0\"" + (token.isEmpty ? "" : ", Token=\"\(token)\"")
     }
 
     static func normalize(_ s: String) -> String {
@@ -745,7 +749,7 @@ final class EmbyClient: ObservableObject {
         r.httpMethod = "POST"
         r.timeoutInterval = 15
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.setValue("MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"8.0\"", forHTTPHeaderField: "X-Emby-Authorization")
+        r.setValue("MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"9.0\"", forHTTPHeaderField: "X-Emby-Authorization")
         r.httpBody = try JSONSerialization.data(withJSONObject: ["Username": user, "Pw": password, "Password": password])
         let (d, resp) = try await URLSession.shared.data(for: r)
         guard let h = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
@@ -1217,7 +1221,7 @@ struct EmbyDetailView: View {
         .overlay {
             if let t = toast {
                 Text(t).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .glassCapsule(interactive: false)
             }
         }
         .navigationTitle(it.Name ?? "")

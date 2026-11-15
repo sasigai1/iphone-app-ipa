@@ -34,6 +34,36 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            tabs
+            if lockEnabled && locked {
+                LockView(unlock: authenticate)
+                    .transition(.opacity)
+            }
+        }
+        .onAppear {
+            if lockEnabled { authenticate() } else { locked = false }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .moyeSwitchTab)) { n in
+            if let t = n.object as? Int { withAnimation { tab = t } }
+        }
+        .onChange(of: phase) { p in
+            if p == .background && lockEnabled { locked = true }
+            if p == .background { PrivacyStore.shared.lockAll() }
+        }
+    }
+
+    @ViewBuilder
+    private var tabs: some View {
+        if #available(iOS 26.0, *) {
+            TabView(selection: $tab) {
+                Tab("主页", systemImage: "square.grid.2x2", value: 0) { HomeView() }
+                Tab("日常", systemImage: "checkmark.seal", value: 4) { DailyView() }
+                Tab("待办", systemImage: "checklist", value: 2) { TasksOverview() }
+                Tab("设置", systemImage: "gearshape", value: 3) { SettingsView() }
+                Tab("搜索", systemImage: "magnifyingglass", value: 1, role: .search) { SearchView() }
+            }
+            .tabBarMinimizeBehavior(.onScrollDown)
+        } else {
             TabView(selection: $tab) {
                 HomeView()
                     .tabItem { Label("主页", systemImage: "square.grid.2x2") }
@@ -51,20 +81,6 @@ struct RootView: View {
                     .tabItem { Label("设置", systemImage: "gearshape") }
                     .tag(3)
             }
-            if lockEnabled && locked {
-                LockView(unlock: authenticate)
-                    .transition(.opacity)
-            }
-        }
-        .onAppear {
-            if lockEnabled { authenticate() } else { locked = false }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .moyeSwitchTab)) { n in
-            if let t = n.object as? Int { withAnimation { tab = t } }
-        }
-        .onChange(of: phase) { p in
-            if p == .background && lockEnabled { locked = true }
-            if p == .background { PrivacyStore.shared.lockAll() }
         }
     }
 
@@ -85,23 +101,30 @@ struct RootView: View {
 
 struct LockView: View {
     let unlock: () -> Void
+    @State private var appear = false
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-            VStack(spacing: 18) {
+            AmbientBackground().ignoresSafeArea()
+            VStack(spacing: 22) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundColor(.accentColor)
-                Text("墨页已锁定")
-                    .font(.title2.bold())
-                Button(action: unlock) {
-                    Label("解锁", systemImage: "faceid")
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 12)
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 86, height: 86)
+                    .glassSurface(Circle(), tint: .accentColor)
+                VStack(spacing: 6) {
+                    Text("墨页").font(.system(size: 34, weight: .bold, design: .serif))
+                    Text("你的笔记已锁定").font(.subheadline).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .clipShape(Capsule())
+                Button(action: unlock) {
+                    Label("解锁", systemImage: "faceid").padding(.horizontal, 12)
+                }
+                .buttonStyle(GlassButtonStyle(prominent: true))
             }
+            .padding(36)
+            .glassCard(radius: 36)
+            .scaleEffect(appear ? 1 : 0.94)
+            .opacity(appear ? 1 : 0)
+            .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) { appear = true } }
         }
     }
 }

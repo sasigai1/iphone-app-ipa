@@ -199,7 +199,7 @@ struct DailyView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .ambient()
             .navigationTitle("日常")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -716,57 +716,58 @@ struct HomeHero: View {
     var body: some View {
         let words = WordGoal.today(store.totalWords)
         let ratio = wordGoal > 0 ? min(1, Double(words) / Double(wordGoal)) : 0
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(Date().journalTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white.opacity(0.85))
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(Date().journalTitle.uppercased())
+                        .font(.system(size: 12, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(.secondary)
                     Text(greeting)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .font(.system(size: 30, weight: .bold, design: .serif))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 Spacer()
                 ZStack {
-                    Circle().stroke(Color.white.opacity(0.25), lineWidth: 6)
+                    Circle().stroke(Color.primary.opacity(0.08), lineWidth: 7)
                     Circle()
                         .trim(from: 0, to: ratio)
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .stroke(AngularGradient(colors: [Color.accentColor.opacity(0.6), Color.accentColor], center: .center), style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .rotationEffect(.degrees(-90))
+                        .shadow(color: Color.accentColor.opacity(0.45), radius: 6)
                     VStack(spacing: 0) {
-                        Text("\(words)").font(.system(size: 14, weight: .bold, design: .rounded))
-                        Text("/\(wordGoal)").font(.system(size: 9, weight: .medium))
+                        Text("\(words)").font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text("/\(wordGoal)").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
                     }
-                    .foregroundColor(.white)
                 }
-                .frame(width: 58, height: 58)
+                .frame(width: 62, height: 62)
+                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: ratio)
             }
-            HStack(spacing: 0) {
-                heroStat("\(store.active.count)", "页面")
-                heroStat("\(store.totalWords)", "总字数")
-                heroStat("\(store.streak)", "连续天")
-                heroStat("\(store.openTasks)", "待办")
+            HStack(spacing: 8) {
+                heroStat("\(store.active.count)", "页面", "doc.text")
+                heroStat("\(store.totalWords)", "总字数", "character.cursor.ibeam")
+                heroStat("\(store.streak)", "连续天", "flame")
+                heroStat("\(store.openTasks)", "待办", "checklist")
             }
+            .glassContainer(spacing: 8)
         }
-        .padding(18)
-        .background(
-            ZStack {
-                LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.65)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Circle().fill(Color.white.opacity(0.10)).frame(width: 180).offset(x: 140, y: -70)
-                Circle().fill(Color.white.opacity(0.07)).frame(width: 120).offset(x: -150, y: 70)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: Color.accentColor.opacity(0.28), radius: 14, y: 6)
+        .padding(20)
+        .glassCard(radius: 30)
+        .padding(.horizontal, 2)
     }
 
-    private func heroStat(_ v: String, _ t: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    private func heroStat(_ v: String, _ t: String, _ icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundColor(.accentColor)
             Text(v).font(.system(size: 18, weight: .bold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
-            Text(t).font(.caption2)
+            Text(t).font(.caption2).foregroundStyle(.secondary)
         }
-        .foregroundColor(.white)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), clear: true)
     }
 }
 
@@ -783,21 +784,14 @@ struct QuickGrid: View {
     let items: [GridAction]
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 14) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 16) {
             ForEach(items) { it in
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     it.run()
                 } label: {
-                    VStack(spacing: 7) {
-                        Image(systemName: it.icon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 50, height: 50)
-                            .background(
-                                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                    .fill(LinearGradient(colors: [it.color, it.color.opacity(0.75)], startPoint: .top, endPoint: .bottom))
-                            )
+                    VStack(spacing: 8) {
+                        GlassIcon(symbol: it.icon, color: it.color, size: 52)
                             .overlay(alignment: .topTrailing) {
                                 if it.badge > 0 {
                                     Text("\(min(it.badge, 99))")
@@ -810,8 +804,8 @@ struct QuickGrid: View {
                                 }
                             }
                         Text(it.title)
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.primary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
@@ -819,9 +813,11 @@ struct QuickGrid: View {
                 .buttonStyle(PressableStyle())
             }
         }
-        .padding(.vertical, 14)
+        .glassContainer(spacing: 16)
+        .padding(.vertical, 18)
         .padding(.horizontal, 8)
-        .card()
+        .glassCard(radius: 28)
+        .padding(.horizontal, 2)
     }
 }
 

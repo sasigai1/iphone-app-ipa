@@ -820,7 +820,7 @@ struct BookshelfView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("书架")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { BookImportButton() }

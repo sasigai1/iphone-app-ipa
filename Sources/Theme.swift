@@ -67,15 +67,7 @@ enum Theme {
 
 struct CardBackground: ViewModifier {
     func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
+        content.glassCard(radius: 20)
     }
 }
 

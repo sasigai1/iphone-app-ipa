@@ -232,7 +232,7 @@ struct ToolboxView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("百宝箱")
     }
 }
@@ -267,7 +267,7 @@ struct GoalsView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("目标")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -847,7 +847,7 @@ struct DailyQuestionView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("每日一问")
         .onAppear { text = life.data.answers[key] ?? "" }
     }
@@ -1094,7 +1094,7 @@ struct WanderView: View {
             .disabled(pool.isEmpty)
             Spacer()
         }
-        .background(Color(.systemGroupedBackground))
+        .ambient()
         .navigationTitle("随机漫步")
         .onAppear { if current == nil { current = pool.randomElement()?.id } }
     }
