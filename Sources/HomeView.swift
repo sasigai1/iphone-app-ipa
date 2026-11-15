@@ -19,15 +19,12 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
-                    header
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                }
-
-                Section {
-                    VStack(spacing: 10) {
-                        quickActions
-                        quickActions2
+                    VStack(spacing: 14) {
+                        HomeHero(greeting: greeting + " 👋")
+                        QuickGrid(items: gridItems)
+                        TodayPanel(onOpen: { id in path.append(id) }, onDaily: {
+                            NotificationCenter.default.post(name: .moyeSwitchTab, object: 4)
+                        })
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -151,7 +148,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew3View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew4View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -160,8 +157,8 @@ struct HomeView: View {
             }
             .onAppear {
                 WordGoal.ensureBaseline(store.totalWords)
-                if seenVersion != "3.0" {
-                    seenVersion = "3.0"
+                if seenVersion != "4.0" {
+                    seenVersion = "4.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -224,7 +221,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("3.0 新功能", systemImage: "sparkles")
+                            Label("4.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -258,6 +255,19 @@ struct HomeView: View {
         }
     }
 
+    private var gridItems: [GridAction] {
+        [
+            GridAction(icon: "doc.badge.plus", title: "新页面", color: .blue) { path.append(store.create()) },
+            GridAction(icon: "tray.and.arrow.down", title: "快速记录", color: .teal) { showCapture = true },
+            GridAction(icon: "sun.max.fill", title: "今日日记", color: .orange) { path.append(store.todayJournal()) },
+            GridAction(icon: "sparkles", title: "模板", color: .pink) { showTemplates = true },
+            GridAction(icon: "rectangle.stack.fill", title: "闪卡", color: .purple, badge: cards.dueCount(store.active)) { path.append("cards") },
+            GridAction(icon: "point.3.connected.trianglepath.dotted", title: "图谱", color: .indigo) { path.append("graph") },
+            GridAction(icon: "timer", title: "专注", color: .red) { showFocus = true },
+            GridAction(icon: "chart.bar.fill", title: "看板", color: .green) { path.append("stats") }
+        ]
+    }
+
     private var paletteActions: [PaletteAction] {
         [
             PaletteAction(title: "新建页面", symbol: "doc.badge.plus", keywords: "new page xinjian") { path.append(store.create()) },
@@ -275,7 +285,9 @@ struct HomeView: View {
                 if let p = store.active.filter({ $0.kind == .document }).randomElement() { path.append(p.id) }
             },
             PaletteAction(title: "废纸篓", symbol: "trash", keywords: "trash") { showTrash = true },
-            PaletteAction(title: "3.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "习惯打卡", symbol: "checkmark.seal", keywords: "habit daka xiguan") { NotificationCenter.default.post(name: .moyeSwitchTab, object: 4) },
+            PaletteAction(title: "倒数日", symbol: "calendar.badge.clock", keywords: "countdown daoshuri") { NotificationCenter.default.post(name: .moyeSwitchTab, object: 4) },
+            PaletteAction(title: "4.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 

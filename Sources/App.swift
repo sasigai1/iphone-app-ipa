@@ -41,6 +41,9 @@ struct RootView: View {
                 SearchView()
                     .tabItem { Label("搜索", systemImage: "magnifyingglass") }
                     .tag(1)
+                DailyView()
+                    .tabItem { Label("日常", systemImage: "checkmark.seal") }
+                    .tag(4)
                 TasksOverview()
                     .tabItem { Label("待办", systemImage: "checklist") }
                     .tag(2)
@@ -55,6 +58,9 @@ struct RootView: View {
         }
         .onAppear {
             if lockEnabled { authenticate() } else { locked = false }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .moyeSwitchTab)) { n in
+            if let t = n.object as? Int { withAnimation { tab = t } }
         }
         .onChange(of: phase) { p in
             if p == .background && lockEnabled { locked = true }
@@ -97,4 +103,8 @@ struct LockView: View {
             }
         }
     }
+}
+
+extension Notification.Name {
+    static let moyeSwitchTab = Notification.Name("moyeSwitchTab")
 }

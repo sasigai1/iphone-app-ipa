@@ -173,6 +173,8 @@ struct SettingsView: View {
     @AppStorage("pageSort") private var pageSort = 0
     @AppStorage("showHeatmap") private var showHeatmap = true
     @AppStorage("wordGoal") private var wordGoal = 300
+    @AppStorage("fontDesign") private var fontDesign = 0
+    @AppStorage("paper") private var paper = 0
     @State private var shareItem: ShareItem?
     @State private var showImporter = false
     @State private var importMessage: String?
@@ -247,9 +249,33 @@ struct SettingsView: View {
                         }
                         Slider(value: $fontSize, in: 14...22, step: 1)
                         Text("预览：好记性不如烂笔头。")
-                            .font(.system(size: fontSize))
+                            .font(.system(size: fontSize, design: Typo.design))
+                            .id(fontDesign)
                             .foregroundColor(.secondary)
                     }
+                }
+
+                Section("编辑器") {
+                    Picker(selection: $fontDesign) {
+                        ForEach(0..<Typo.names.count, id: \.self) { i in Text(Typo.names[i]).tag(i) }
+                    } label: {
+                        Label("字体风格", systemImage: "textformat")
+                    }
+                    Picker(selection: $paper) {
+                        ForEach(0..<Paper.names.count, id: \.self) { i in Text(Paper.names[i]).tag(i) }
+                    } label: {
+                        Label("纸张底色", systemImage: "doc.plaintext")
+                    }
+                    HStack(spacing: 10) {
+                        ForEach(0..<Paper.names.count, id: \.self) { i in
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Paper.color(i))
+                                .frame(height: 34)
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(paper == i ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: paper == i ? 2 : 1))
+                                .onTapGesture { paper = i }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 Section("主页") {
@@ -302,7 +328,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "3.0")
+                    LabeledContent("版本", value: "4.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }

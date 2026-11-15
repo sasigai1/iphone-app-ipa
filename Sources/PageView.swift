@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import VisionKit
 
 struct PageScreen: View {
     @EnvironmentObject var store: NoteStore
@@ -48,6 +49,11 @@ struct PageEditor: View {
     @State private var presenting = false
     @State private var exportItem: ShareItem?
     @State private var savedTemplate = false
+    @State private var showScanner = false
+    @State private var showOCRPhoto = false
+    @State private var showReading = false
+    @AppStorage("paper") private var paper = 0
+    @AppStorage("fontDesign") private var fontDesign = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -98,6 +104,10 @@ struct PageEditor: View {
             onPhotoData: { name in insertImage(name) }
         ))
         .modifier(PageExtras(page: $page, sheet: $extraSheet, presenting: $presenting, shareURL: $exportItem))
+        .modifier(OCRTools(page: $page, showScanner: $showScanner, showPhoto: $showOCRPhoto))
+        .fullScreenCover(isPresented: $showReading) {
+            ReadingView(page: page)
+        }
         .alert("已存为模板", isPresented: $savedTemplate) {
             Button("好") {}
         } message: {
@@ -152,7 +162,7 @@ struct PageEditor: View {
                     iconRow
                     breadcrumbView
                     TextField("无标题", text: $page.title, axis: .vertical)
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 32, weight: .bold, design: Typo.design))
                         .submitLabel(.next)
                         .disabled(page.locked)
                     TagStrip(tags: $page.tags, readOnly: page.locked)
@@ -173,6 +183,7 @@ struct PageEditor: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        .background(Paper.color(paper).ignoresSafeArea())
     }
 
     // MARK: Header
@@ -279,6 +290,10 @@ struct PageEditor: View {
     // MARK: Blocks
 
     private var blockList: some View {
+        blockStack.id(fontDesign)
+    }
+
+    private var blockStack: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach($page.blocks) { $block in
                 BlockRow(
@@ -450,7 +465,16 @@ struct PageEditor: View {
             Menu {
                 if page.kind == .document {
                     Button { showOutline = true } label: { Label("大纲", systemImage: "list.bullet.indent") }
+                    Button { focused = nil; showReading = true } label: { Label("阅读视图", systemImage: "book") }
                     Button { focused = nil; presenting = true } label: { Label("演示模式", systemImage: "play.rectangle") }
+                    Menu {
+                        if VNDocumentCameraViewController.isSupported {
+                            Button { focused = nil; showScanner = true } label: { Label("扫描文档", systemImage: "doc.viewfinder") }
+                        }
+                        Button { focused = nil; showOCRPhoto = true } label: { Label("从照片识别", systemImage: "photo.on.rectangle") }
+                    } label: {
+                        Label("识别文字", systemImage: "text.viewfinder")
+                    }
                     Button { focused = nil; extraSheet = .findReplace } label: { Label("查找与替换", systemImage: "magnifyingglass") }
                 }
                 Button { focused = nil; extraSheet = .history } label: { Label("版本历史", systemImage: "clock.arrow.circlepath") }

@@ -61,26 +61,26 @@ struct BlockRow: View {
     private var content: some View {
         switch block.type {
         case .text:
-            field(placeholder: isFocused ? "输入文字，或输入 / 插入块" : "", font: .system(size: fontSize))
+            field(placeholder: isFocused ? "输入文字，或输入 / 插入块" : "", font: .system(size: fontSize, design: Typo.design))
         case .h1:
-            field(placeholder: "一级标题", font: .system(size: fontSize + 11, weight: .bold))
+            field(placeholder: "一级标题", font: .system(size: fontSize + 11, weight: .bold, design: Typo.design))
         case .h2:
-            field(placeholder: "二级标题", font: .system(size: fontSize + 6, weight: .bold))
+            field(placeholder: "二级标题", font: .system(size: fontSize + 6, weight: .bold, design: Typo.design))
         case .h3:
-            field(placeholder: "三级标题", font: .system(size: fontSize + 2, weight: .semibold))
+            field(placeholder: "三级标题", font: .system(size: fontSize + 2, weight: .semibold, design: Typo.design))
         case .bullet:
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("•")
-                    .font(.system(size: fontSize + 4, weight: .bold))
+                    .font(.system(size: fontSize + 4, weight: .bold, design: Typo.design))
                     .foregroundColor(.accentColor)
-                field(placeholder: "列表", font: .system(size: fontSize))
+                field(placeholder: "列表", font: .system(size: fontSize, design: Typo.design))
             }
         case .numbered:
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(number).")
-                    .font(.system(size: fontSize, weight: .semibold).monospacedDigit())
+                    .font(.system(size: fontSize, weight: .semibold, design: Typo.design).monospacedDigit())
                     .foregroundColor(.accentColor)
-                field(placeholder: "列表", font: .system(size: fontSize))
+                field(placeholder: "列表", font: .system(size: fontSize, design: Typo.design))
             }
         case .todo:
             todoView
@@ -129,11 +129,11 @@ struct BlockRow: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } label: {
                 Image(systemName: block.checked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: fontSize + 2))
+                    .font(.system(size: fontSize + 2, design: Typo.design))
                     .foregroundColor(block.checked ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            RichField(text: $block.text, placeholder: "待办", font: .system(size: fontSize), blockID: block.id, focus: focus, readOnly: readOnly, strike: block.checked, dim: block.checked)
+            RichField(text: $block.text, placeholder: "待办", font: .system(size: fontSize, design: Typo.design), blockID: block.id, focus: focus, readOnly: readOnly, strike: block.checked, dim: block.checked)
         }
     }
 
@@ -144,17 +144,17 @@ struct BlockRow: View {
                     withAnimation(.easeInOut(duration: 0.2)) { block.expanded.toggle() }
                 } label: {
                     Image(systemName: "arrowtriangle.right.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: Typo.design))
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(block.expanded ? 90 : 0))
                         .frame(width: 18)
                 }
                 .buttonStyle(.plain)
-                field(placeholder: "折叠标题", font: .system(size: fontSize, weight: .medium))
+                field(placeholder: "折叠标题", font: .system(size: fontSize, weight: .medium, design: Typo.design))
             }
             if block.expanded {
                 TextField("折叠内容…", text: $block.detail, axis: .vertical)
-                    .font(.system(size: fontSize - 1))
+                    .font(.system(size: fontSize - 1, design: Typo.design))
                     .foregroundColor(.secondary)
                     .padding(.leading, 26)
             }
@@ -169,9 +169,9 @@ struct BlockRow: View {
                 }
             } label: {
                 Text(block.emoji)
-                    .font(.system(size: fontSize + 3))
+                    .font(.system(size: fontSize + 3, design: Typo.design))
             }
-            field(placeholder: "写点醒目的内容", font: .system(size: fontSize))
+            field(placeholder: "写点醒目的内容", font: .system(size: fontSize, design: Typo.design))
         }
         .padding(14)
         .background(
@@ -249,7 +249,7 @@ struct BlockRow: View {
                 HStack(spacing: 8) {
                     Text(p.icon)
                     Text(p.displayTitle)
-                        .font(.system(size: fontSize, weight: .medium))
+                        .font(.system(size: fontSize, weight: .medium, design: Typo.design))
                         .underline(color: Color.secondary.opacity(0.4))
                         .foregroundColor(.primary)
                     Spacer()
@@ -282,7 +282,7 @@ struct BlockRow: View {
                         HStack(spacing: 0) {
                             ForEach(0..<block.table[r].count, id: \.self) { c in
                                 TextField(r == 0 ? "标题" : "", text: cellBinding(r, c), axis: .vertical)
-                                    .font(.system(size: fontSize - 2, weight: r == 0 ? .semibold : .regular))
+                                    .font(.system(size: fontSize - 2, weight: r == 0 ? .semibold : .regular, design: Typo.design))
                                     .padding(8)
                                     .frame(width: 120, alignment: .topLeading)
                                     .frame(minHeight: 38, alignment: .topLeading)
@@ -373,7 +373,7 @@ struct BlockRow: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(block.text.isEmpty ? (normalizedURL(trimmed)?.host ?? trimmed) : block.text)
-                            .font(.system(size: fontSize - 1, weight: .semibold))
+                            .font(.system(size: fontSize - 1, weight: .semibold, design: Typo.design))
                             .foregroundColor(.primary)
                             .lineLimit(1)
                         Text(trimmed)
@@ -418,7 +418,7 @@ struct BlockRow: View {
                     onJump(h.id)
                 } label: {
                     Text(h.text)
-                        .font(.system(size: fontSize - 1))
+                        .font(.system(size: fontSize - 1, design: Typo.design))
                         .underline(color: Color.secondary.opacity(0.3))
                         .foregroundColor(.primary)
                         .padding(.leading, h.type == .h1 ? 0 : (h.type == .h2 ? 14 : 28))
