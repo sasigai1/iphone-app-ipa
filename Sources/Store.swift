@@ -121,6 +121,21 @@ final class NoteStore: ObservableObject {
         }
     }
 
+    static func saveData(_ data: Data, ext: String, existing: String?) -> String? {
+        let name = existing ?? (UUID().uuidString + "." + ext)
+        do {
+            try data.write(to: imagesDir.appendingPathComponent(name), options: .atomic)
+            return name
+        } catch {
+            return nil
+        }
+    }
+
+    static func loadData(_ name: String?) -> Data? {
+        guard let name = name else { return nil }
+        return try? Data(contentsOf: imagesDir.appendingPathComponent(name))
+    }
+
     static func loadImage(_ name: String?) -> UIImage? {
         guard let name = name else { return nil }
         return UIImage(contentsOfFile: imagesDir.appendingPathComponent(name).path)
@@ -211,12 +226,71 @@ final class NoteStore: ObservableObject {
         }
     }
 
+    // MARK: Links & tags
+
+    var allTags: [String] {
+        var counts: [String: Int] = [:]
+        for p in active { for t in p.tags { counts[t, default: 0] += 1 } }
+        return counts.keys.sorted { (counts[$0] ?? 0, $1) > (counts[$1] ?? 0, $0) }
+    }
+
+    func tagCount(_ t: String) -> Int { active.filter { $0.tags.contains(t) }.count }
+
+    func pages(tagged t: String) -> [Page] {
+        active.filter { $0.tags.contains(t) }.sorted { $0.updated > $1.updated }
+    }
+
+    func pageNamed(_ name: String) -> Page? {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        return active.first { $0.displayTitle == n } ?? active.first { $0.displayTitle.lowercased() == n.lowercased() }
+    }
+
+    /// Pages that mention this page via [[标题]] or embed it as a sub-page block.
+    func backlinks(_ id: UUID) -> [Page] {
+        guard let target = page(id) else { return [] }
+        let token = "[[\(target.displayTitle)]]"
+        return active.filter { p in
+            guard p.id != id else { return false }
+            return p.blocks.contains { b in
+                b.text.contains(token) || b.detail.contains(token) || (b.type == .page && b.linkedPage == id && p.id != target.parentID)
+            }
+        }.sorted { $0.updated > $1.updated }
+    }
+
+    /// Creates the page if it doesn't exist; used for [[new page]] links.
+    func resolveLink(_ name: String) -> UUID {
+        if let p = pageNamed(name) { return p.id }
+        return create(title: name)
+    }
+
+    // MARK: Focus sessions
+
+    @Published var focusLog: [String: Int] = UserDefaults.standard.dictionary(forKey: "focusLog") as? [String: Int] ?? [:]
+
+    func logFocus(minutes: Int) {
+        focusLog[Date().dayKey, default: 0] += minutes
+        UserDefaults.standard.set(focusLog, forKey: "focusLog")
+    }
+
+    var focusToday: Int { focusLog[Date().dayKey] ?? 0 }
+    var focusWeek: Int {
+        (0..<7).reduce(0) { acc, i in
+            let d = Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date()
+            return acc + (focusLog[d.dayKey] ?? 0)
+        }
+    }
+
     func search(_ q: String) -> [(Page, String)] {
         let query = q.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return [] }
+        if query.hasPrefix("#") && query.count > 1 {
+            let t = String(query.dropFirst())
+            return active.filter { $0.tags.contains { $0.lowercased().contains(t) } }
+                .map { ($0, $0.tags.map { "#" + $0 }.joined(separator: " ")) }
+        }
         var results: [(Page, String)] = []
         for p in active {
-            if p.title.lowercased().contains(query) {
+            if p.title.lowercased().contains(query) || p.tags.contains(where: { $0.lowercased() == query }) {
                 results.append((p, p.preview))
                 continue
             }
@@ -295,6 +369,9 @@ final class NoteStore: ObservableObject {
     func deleteForever(_ id: UUID) {
         let ids = Set([id] + descendants(of: id))
         for p in pages where ids.contains(p.id) {
+            if let f = p.coverImage {
+                try? FileManager.default.removeItem(at: NoteStore.imagesDir.appendingPathComponent(f))
+            }
             for b in p.blocks {
                 if let f = b.imageFile {
                     try? FileManager.default.removeItem(at: NoteStore.imagesDir.appendingPathComponent(f))

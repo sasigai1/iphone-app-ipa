@@ -57,6 +57,27 @@ enum Templates {
                 p.blocks = [Block()]
                 return p
             },
+            PageTemplate(name: "知识卡片", icon: "🧠", desc: "双链 + 标签，打造第二大脑") {
+                var p = page("新概念", "🧠", cover: 4, [
+                    b(.callout, "一句话定义：**在这里写下核心观点**"),
+                    b(.h2, "要点"),
+                    b(.bullet, "要点一，可以 ==高亮== 关键词"),
+                    b(.bullet, "要点二"),
+                    b(.h2, "关联"),
+                    b(.text, "相关概念：[[另一个概念]]"),
+                    b(.h2, "来源"),
+                    b(.bookmark, "")
+                ])
+                p.tags = ["知识"]
+                return p
+            },
+            PageTemplate(name: "白板草图", icon: "🖍️", desc: "手绘想法、流程图和灵感") {
+                page("草图", "🖍️", cover: 5, [
+                    b(.h2, "灵感"),
+                    b(.drawing),
+                    b(.text, "")
+                ])
+            },
             PageTemplate(name: "每日日记", icon: "🌤️", desc: "心情、感恩与今日回顾") {
                 journal()
             },

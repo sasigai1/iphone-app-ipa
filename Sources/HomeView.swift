@@ -5,6 +5,9 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var showTemplates = false
     @State private var showTrash = false
+    @State private var showFocus = false
+    @State private var showWhatsNew = false
+    @AppStorage("seenVersion") private var seenVersion = ""
     @AppStorage("pageSort") private var pageSort = 0
     @AppStorage("showHeatmap") private var showHeatmap = true
 
@@ -87,6 +90,35 @@ struct HomeView: View {
                     }
                 }
 
+                if !store.allTags.isEmpty {
+                    Section {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(store.allTags.prefix(15), id: \.self) { t in
+                                    NavigationLink(value: "tag:" + t) {
+                                        Text("#\(t)")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(TagColor.of(t))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(TagColor.of(t).opacity(0.14)))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    } header: {
+                        HStack {
+                            Text("标签")
+                            Spacer()
+                            NavigationLink(value: "tag:") {
+                                Text("全部").font(.caption)
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Button {
                         showTrash = true
@@ -107,6 +139,18 @@ struct HomeView: View {
             .navigationTitle("墨页")
             .navigationDestination(for: UUID.self) { id in
                 PageScreen(pageID: id)
+            }
+            .navigationDestination(for: String.self) { key in
+                let t = String(key.dropFirst(4))
+                TagBrowser(selected: t.isEmpty ? nil : t)
+            }
+            .sheet(isPresented: $showFocus) { FocusTimerView() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNewView() }
+            .onAppear {
+                if seenVersion != "2.0" {
+                    seenVersion = "2.0"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -130,6 +174,16 @@ struct HomeView: View {
                             path.append(store.todayJournal())
                         } label: {
                             Label("今日日记", systemImage: "sun.max")
+                        }
+                        Button {
+                            showFocus = true
+                        } label: {
+                            Label("专注番茄钟", systemImage: "timer")
+                        }
+                        Button {
+                            showWhatsNew = true
+                        } label: {
+                            Label("2.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -166,10 +220,13 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting + " 👋")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
+            ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 StatPill(icon: "doc.text", text: "\(store.active.count) 个页面")
                 StatPill(icon: "character.cursor.ibeam", text: "\(store.totalWords) 字")
                 StatPill(icon: "checklist", text: "\(store.openTasks) 待办")
+                StatPill(icon: "timer", text: "专注 \(store.focusToday) 分")
+            }
             }
         }
         .padding(.vertical, 6)
@@ -181,8 +238,8 @@ struct HomeView: View {
             QuickButton(icon: "doc.badge.plus", title: "新页面", color: .blue) {
                 path.append(store.create())
             }
-            QuickButton(icon: "tablecells", title: "数据库", color: .purple) {
-                path.append(store.create(title: "", kind: .database))
+            QuickButton(icon: "timer", title: "专注", color: .red) {
+                showFocus = true
             }
             QuickButton(icon: "sun.max", title: "今日日记", color: .orange) {
                 path.append(store.todayJournal())

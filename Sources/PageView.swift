@@ -40,6 +40,10 @@ struct PageEditor: View {
     @State private var showMove = false
     @State private var showOutline = false
     @State private var jumpTarget: UUID?
+    @State private var linkTarget: UUID?
+    @State private var showLinkPicker = false
+    @State private var linkInsertTarget: UUID?
+    @State private var photoForCover = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -49,6 +53,23 @@ struct PageEditor: View {
                     withAnimation(.easeInOut) { proxy.scrollTo(t, anchor: .top) }
                     jumpTarget = nil
                 }
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            if let name = RichText.pageName(from: url) {
+                let id = store.resolveLink(name)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    focused = nil
+                    linkTarget = id
+                }
+                return .handled
+            }
+            return .systemAction
+        })
+        .navigationDestination(isPresented: Binding(get: { linkTarget != nil }, set: { if !$0 { linkTarget = nil } })) {
+            if let id = linkTarget { PageScreen(pageID: id) }
+        }
+        .sheet(isPresented: $showLinkPicker) {
+            PageLinkPicker(excluding: pageID) { name in insertLink(name) }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { topToolbar }
@@ -74,7 +95,34 @@ struct PageEditor: View {
         ))
     }
 
+    private func insertLink(_ name: String) {
+        _ = store.resolveLink(name)
+        let token = "[[\(name)]]"
+        if let t = linkInsertTarget, let i = page.blocks.firstIndex(where: { $0.id == t }), page.blocks[i].type.isTextual {
+            let cur = page.blocks[i].text
+            page.blocks[i].text = cur + (cur.isEmpty || cur.hasSuffix(" ") ? "" : " ") + token + " "
+        } else {
+            var nb = Block()
+            nb.text = token + " "
+            page.blocks.append(nb)
+        }
+    }
+
+    private func wrap(_ id: UUID, _ left: String, _ right: String, _ sample: String) {
+        guard let i = page.blocks.firstIndex(where: { $0.id == id }) else { return }
+        let cur = page.blocks[i].text
+        page.blocks[i].text = cur + (cur.isEmpty || cur.hasSuffix(" ") ? "" : " ") + left + sample + right
+    }
+
     private func insertImage(_ name: String) {
+        if photoForCover {
+            photoForCover = false
+            if let old = page.coverImage {
+                try? FileManager.default.removeItem(at: NoteStore.imagesDir.appendingPathComponent(old))
+            }
+            page.coverImage = name
+            return
+        }
         if let t = imageTarget, let i = page.blocks.firstIndex(where: { $0.id == t }) {
             page.blocks[i].type = .image
             page.blocks[i].imageFile = name
@@ -96,6 +144,8 @@ struct PageEditor: View {
                     TextField("无标题", text: $page.title, axis: .vertical)
                         .font(.system(size: 32, weight: .bold))
                         .submitLabel(.next)
+                        .disabled(page.locked)
+                    TagStrip(tags: $page.tags, readOnly: page.locked)
                     Text("编辑于 \(page.updated.relative) · \(page.wordCount) 字 · 约 \(page.readingMinutes) 分钟读完" + (page.locked ? " · 🔒 已锁定" : ""))
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -106,6 +156,7 @@ struct PageEditor: View {
                     } else {
                         blockList
                     }
+                    BacklinksSection(pageID: pageID)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 120)
@@ -118,7 +169,34 @@ struct PageEditor: View {
 
     @ViewBuilder
     private var coverView: some View {
-        if let c = page.cover {
+        if let ui = NoteStore.loadImage(page.coverImage) {
+            Color.clear
+                .frame(height: 170)
+                .overlay(Image(uiImage: ui).resizable().scaledToFill())
+                .clipped()
+                .overlay(alignment: .bottomTrailing) {
+                    Menu {
+                        Button { photoForCover = true; showPhoto = true } label: { Label("换一张照片", systemImage: "photo") }
+                        Button {
+                            if let f = page.coverImage { try? FileManager.default.removeItem(at: NoteStore.imagesDir.appendingPathComponent(f)) }
+                            page.coverImage = nil
+                            if page.cover == nil { page.cover = 0 }
+                            showCoverPicker = true
+                        } label: { Label("改用渐变色", systemImage: "paintpalette") }
+                        Button(role: .destructive) {
+                            if let f = page.coverImage { try? FileManager.default.removeItem(at: NoteStore.imagesDir.appendingPathComponent(f)) }
+                            page.coverImage = nil
+                        } label: { Label("移除封面", systemImage: "trash") }
+                    } label: {
+                        Text("更换封面")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
+                    .padding(12)
+                }
+        } else if let c = page.cover {
             Theme.cover(c)
                 .frame(height: 150)
                 .overlay(alignment: .bottomTrailing) {
@@ -139,6 +217,8 @@ struct PageEditor: View {
         }
     }
 
+    private var hasCover: Bool { page.cover != nil || page.coverImage != nil }
+
     private var iconRow: some View {
         HStack(alignment: .bottom, spacing: 12) {
             Button {
@@ -148,10 +228,10 @@ struct PageEditor: View {
                     .font(.system(size: 54))
             }
             .buttonStyle(.plain)
-            .offset(y: page.cover == nil ? 0 : -34)
-            .padding(.bottom, page.cover == nil ? 0 : -34)
+            .offset(y: hasCover ? -34 : 0)
+            .padding(.bottom, hasCover ? -34 : 0)
 
-            if page.cover == nil {
+            if !hasCover {
                 Button {
                     page.cover = Int.random(in: 0..<Theme.covers.count)
                 } label: {
@@ -293,6 +373,10 @@ struct PageEditor: View {
         case .toc:
             page.blocks[idx].type = .toc
             page.blocks[idx].text = ""
+        case .drawing:
+            page.blocks[idx].type = .drawing
+            page.blocks[idx].text = ""
+            if idx == page.blocks.count - 1 { page.blocks.append(Block()) }
         case .divider:
             page.blocks[idx].type = .divider
             page.blocks[idx].text = ""
@@ -363,8 +447,13 @@ struct PageEditor: View {
                     Label(page.locked ? "解锁编辑" : "锁定页面", systemImage: page.locked ? "lock.open" : "lock")
                 }
                 Button { showIconPicker = true } label: { Label("更换图标", systemImage: "face.smiling") }
-                Button { showCoverPicker = true } label: { Label(page.cover == nil ? "添加封面" : "更换封面", systemImage: "photo.on.rectangle") }
+                Button { showCoverPicker = true } label: { Label(hasCover ? "更换渐变封面" : "添加渐变封面", systemImage: "photo.on.rectangle") }
+                Button { photoForCover = true; showPhoto = true } label: { Label("用照片做封面", systemImage: "photo.on.rectangle.angled") }
                 if page.kind == .document {
+                    Button {
+                        linkInsertTarget = nil
+                        showLinkPicker = true
+                    } label: { Label("链接到页面", systemImage: "link.badge.plus") }
                     Button {
                         imageTarget = nil
                         showPhoto = true
@@ -405,6 +494,23 @@ struct PageEditor: View {
                     Image(systemName: "plus.square")
                 }
                 Button {
+                    linkInsertTarget = id
+                    focused = nil
+                    showLinkPicker = true
+                } label: {
+                    Image(systemName: "link")
+                }
+                Menu {
+                    Button { wrap(id, "**", "**", "粗体") } label: { Label("粗体", systemImage: "bold") }
+                    Button { wrap(id, "*", "*", "斜体") } label: { Label("斜体", systemImage: "italic") }
+                    Button { wrap(id, "~~", "~~", "删除线") } label: { Label("删除线", systemImage: "strikethrough") }
+                    Button { wrap(id, "==", "==", "高亮") } label: { Label("高亮", systemImage: "highlighter") }
+                    Button { wrap(id, "`", "`", "代码") } label: { Label("行内代码", systemImage: "chevron.left.forwardslash.chevron.right") }
+                    Button { wrap(id, "[", "](https://)", "链接文字") } label: { Label("网页链接", systemImage: "globe") }
+                } label: {
+                    Image(systemName: "textformat")
+                }
+                Button {
                     perform(.convert(block.type == .todo ? .text : .todo), on: id)
                 } label: {
                     Image(systemName: "checkmark.square")
@@ -419,8 +525,6 @@ struct PageEditor: View {
                 } label: {
                     Image(systemName: "textformat.size")
                 }
-                Button { perform(.moveUp, on: id) } label: { Image(systemName: "arrow.up") }
-                Button { perform(.moveDown, on: id) } label: { Image(systemName: "arrow.down") }
                 Button { perform(.delete, on: id) } label: { Image(systemName: "trash") }
             }
             Spacer()
@@ -444,6 +548,9 @@ struct PageInfoView: View {
                 LabeledContent("阅读时长", value: "约 \(page.readingMinutes) 分钟")
                 LabeledContent("标题数", value: "\(page.headings.count)")
                 LabeledContent("块数量", value: "\(page.blocks.count)")
+                if !page.tags.isEmpty {
+                    LabeledContent("标签", value: page.tags.map { "#" + $0 }.joined(separator: " "))
+                }
                 if page.kind == .database {
                     LabeledContent("条目", value: "\(page.rows.count)")
                 }

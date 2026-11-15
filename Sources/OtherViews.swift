@@ -41,7 +41,7 @@ struct SearchView: View {
                     }
                 }
             }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标题、正文、任务")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标题、正文、任务，或 #标签")
             .navigationTitle("搜索")
             .navigationDestination(for: UUID.self) { id in
                 PageScreen(pageID: id)
@@ -166,6 +166,7 @@ struct SettingsView: View {
     @EnvironmentObject var store: NoteStore
     @AppStorage("appearance") private var appearance = 0
     @AppStorage("accent") private var accent = 0
+    @AppStorage("customAccent") private var customAccent = ""
     @AppStorage("fontSize") private var fontSize: Double = 17
     @AppStorage("lockEnabled") private var lockEnabled = false
     @State private var confirmReset = false
@@ -223,6 +224,16 @@ struct SettingsView: View {
                                 .buttonStyle(.borderless)
                             }
                         }
+                        ColorPicker(selection: Binding(
+                            get: { AccentStore.color(from: customAccent) ?? Theme.accent(accent) },
+                            set: { c in
+                                customAccent = AccentStore.hex(from: c)
+                                accent = Theme.customAccentIndex
+                            }
+                        ), supportsOpacity: false) {
+                            Text(accent == Theme.customAccentIndex ? "自定义颜色（使用中）" : "自定义颜色")
+                                .font(.subheadline)
+                        }
                     }
                     .padding(.vertical, 4)
 
@@ -252,6 +263,8 @@ struct SettingsView: View {
                         Label("页面排序", systemImage: "arrow.up.arrow.down")
                     }
                     LabeledContent("连续写作", value: "\(store.streak) 天")
+                    LabeledContent("今日专注", value: "\(store.focusToday) 分钟")
+                    LabeledContent("标签数", value: "\(store.allTags.count)")
                 }
 
                 Section("隐私") {
@@ -285,7 +298,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "1.1")
+                    LabeledContent("版本", value: "2.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }

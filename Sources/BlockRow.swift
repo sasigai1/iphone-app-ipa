@@ -113,15 +113,13 @@ struct BlockRow: View {
             bookmarkView
         case .toc:
             tocView
+        case .drawing:
+            DrawingBlockView(block: $block, readOnly: readOnly)
         }
     }
 
     private func field(placeholder: String, font: Font) -> some View {
-        TextField(placeholder, text: $block.text, axis: .vertical)
-            .font(font)
-            .focused(focus, equals: block.id)
-            .lineSpacing(3)
-            .disabled(readOnly)
+        RichField(text: $block.text, placeholder: placeholder, font: font, blockID: block.id, focus: focus, readOnly: readOnly)
     }
 
     private var todoView: some View {
@@ -135,12 +133,7 @@ struct BlockRow: View {
                     .foregroundColor(block.checked ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            TextField("待办", text: $block.text, axis: .vertical)
-                .font(.system(size: fontSize))
-                .focused(focus, equals: block.id)
-                .strikethrough(block.checked)
-                .foregroundColor(block.checked ? .secondary : .primary)
-                .disabled(readOnly)
+            RichField(text: $block.text, placeholder: "待办", font: .system(size: fontSize), blockID: block.id, focus: focus, readOnly: readOnly, strike: block.checked, dim: block.checked)
         }
     }
 
@@ -493,6 +486,10 @@ struct BlockRow: View {
             let after = String(newValue[r.upperBound...]).replacingOccurrences(of: "\n", with: " ")
             block.text = before
             onSplit(after)
+            return
+        }
+        if block.type != .code, let expanded = DateShortcuts.expand(newValue) {
+            block.text = expanded
             return
         }
         guard block.type == .text else { return }

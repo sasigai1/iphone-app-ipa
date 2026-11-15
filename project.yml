@@ -20,8 +20,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sasigai1.moye
         PRODUCT_NAME: Moye
-        MARKETING_VERSION: "1.1"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "2.0"
+        CURRENT_PROJECT_VERSION: "3"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "墨页"
         INFOPLIST_KEY_NSFaceIDUsageDescription: "用面容 ID 解锁你的笔记"

@@ -10,8 +10,14 @@ enum Theme {
         ("石墨", Color(red: 0.30, green: 0.32, blue: 0.37))
     ]
 
+    static let customAccentIndex = 99
+
     static func accent(_ i: Int) -> Color {
-        accents[max(0, min(i, accents.count - 1))].1
+        if i == customAccentIndex {
+            let hex = UserDefaults.standard.string(forKey: "customAccent") ?? ""
+            return AccentStore.color(from: hex) ?? accents[0].1
+        }
+        return accents[max(0, min(i, accents.count - 1))].1
     }
 
     static let covers: [[Color]] = [

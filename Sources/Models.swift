@@ -1,7 +1,7 @@
 import Foundation
 
 enum BlockType: String, Codable, CaseIterable, Identifiable {
-    case text, h1, h2, h3, bullet, numbered, todo, toggle, quote, callout, code, divider, image, page, table, bookmark, toc
+    case text, h1, h2, h3, bullet, numbered, todo, toggle, quote, callout, code, divider, image, page, table, bookmark, toc, drawing
 
     var id: String { rawValue }
 
@@ -24,6 +24,7 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .table: return "表格"
         case .bookmark: return "网页书签"
         case .toc: return "目录"
+        case .drawing: return "手绘白板"
         }
     }
 
@@ -46,6 +47,7 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .table: return "tablecells"
         case .bookmark: return "link"
         case .toc: return "list.bullet.indent"
+        case .drawing: return "scribble.variable"
         }
     }
 
@@ -68,18 +70,19 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .table: return "行列可增删的简单表格"
         case .bookmark: return "保存一个网址，点击直接打开"
         case .toc: return "自动生成本页标题目录"
+        case .drawing: return "用手指或 Apple Pencil 随手画"
         }
     }
 
     var isListLike: Bool { self == .bullet || self == .numbered || self == .todo }
-    var isTextual: Bool { ![.divider, .image, .page, .table, .bookmark, .toc].contains(self) }
+    var isTextual: Bool { ![.divider, .image, .page, .table, .bookmark, .toc, .drawing].contains(self) }
     var isHeading: Bool { self == .h1 || self == .h2 || self == .h3 }
 
     static let groups: [(String, [BlockType])] = [
         ("基础", [.text, .h1, .h2, .h3]),
         ("列表", [.bullet, .numbered, .todo, .toggle]),
         ("高级", [.quote, .callout, .code, .table, .divider, .toc]),
-        ("媒体与链接", [.image, .bookmark, .page])
+        ("媒体与链接", [.image, .drawing, .bookmark, .page])
     ]
 }
 
@@ -197,6 +200,8 @@ struct Page: Identifiable, Codable, Equatable {
     var created: Date = Date()
     var updated: Date = Date()
     var locked: Bool = false
+    var tags: [String] = []
+    var coverImage: String? = nil
 
     var readingMinutes: Int { max(1, Int((Double(wordCount) / 400.0).rounded(.up))) }
 
@@ -258,6 +263,7 @@ struct Page: Identifiable, Codable, Equatable {
             case .code: out += "```\n\(b.text)\n```\n\n"
             case .divider: out += "---\n\n"
             case .image: out += "![图片](\(b.imageFile ?? ""))\n\n"
+            case .drawing: out += "🖍️ [手绘白板]\n\n"
             case .page:
                 if let id = b.linkedPage { out += "📄 \(titleFor(id))\n\n" }
             case .bookmark:
@@ -294,6 +300,8 @@ extension Page {
         if let v = try c.decodeIfPresent(Date.self, forKey: .created) { created = v }
         if let v = try c.decodeIfPresent(Date.self, forKey: .updated) { updated = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .locked) { locked = v }
+        if let v = try c.decodeIfPresent([String].self, forKey: .tags) { tags = v }
+        coverImage = try c.decodeIfPresent(String.self, forKey: .coverImage)
     }
 }
 

@@ -6,12 +6,13 @@ struct MoyeApp: App {
     @StateObject private var store = NoteStore()
     @AppStorage("appearance") private var appearance = 0
     @AppStorage("accent") private var accent = 0
+    @AppStorage("customAccent") private var customAccent = ""
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(store)
-                .tint(Theme.accent(accent))
+                .tint(accent == Theme.customAccentIndex ? (AccentStore.color(from: customAccent) ?? Theme.accent(0)) : Theme.accent(accent))
                 .preferredColorScheme(scheme)
         }
     }
