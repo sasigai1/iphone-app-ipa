@@ -1,0 +1,266 @@
+import SwiftUI
+
+struct SearchView: View {
+    @EnvironmentObject var store: NoteStore
+    @State private var query = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if query.isEmpty {
+                    Section("最近编辑") {
+                        ForEach(store.recents) { p in
+                            NavigationLink(value: p.id) { PageLabel(page: p) }
+                        }
+                    }
+                } else {
+                    let results = store.search(query)
+                    if results.isEmpty {
+                        Text("没有找到“\(query)”")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Section("\(results.count) 个结果") {
+                            ForEach(0..<results.count, id: \.self) { idx in
+                                let item = results[idx]
+                                NavigationLink(value: item.0.id) {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Text(item.0.icon).font(.title3)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(item.0.displayTitle)
+                                                .font(.body.weight(.medium))
+                                            Text(item.1)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标题、正文、任务")
+            .navigationTitle("搜索")
+            .navigationDestination(for: UUID.self) { id in
+                PageScreen(pageID: id)
+            }
+        }
+    }
+}
+
+struct TodoRef: Identifiable {
+    let id: UUID
+    let pageID: UUID
+    let pageTitle: String
+    let pageIcon: String
+    let text: String
+    let isRow: Bool
+}
+
+struct TasksOverview: View {
+    @EnvironmentObject var store: NoteStore
+    @State private var showDone = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                let items = collect()
+                if items.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "checkmark.seal")
+                            .font(.system(size: 40))
+                            .foregroundColor(.green)
+                        Text(showDone ? "还没有完成的待办" : "所有待办都完成了 🎉")
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(groupedKeys(items), id: \.self) { pid in
+                        let group = items.filter { $0.pageID == pid }
+                        Section {
+                            ForEach(group) { t in
+                                HStack(spacing: 12) {
+                                    Button {
+                                        toggle(t)
+                                    } label: {
+                                        Image(systemName: showDone ? "checkmark.circle.fill" : "circle")
+                                            .font(.title3)
+                                            .foregroundColor(showDone ? .green : .secondary)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    Text(t.text.isEmpty ? "未命名待办" : t.text)
+                                        .strikethrough(showDone)
+                                        .foregroundColor(showDone ? .secondary : .primary)
+                                    Spacer()
+                                    if t.isRow {
+                                        Image(systemName: "tablecells")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        } header: {
+                            NavigationLink(value: pid) {
+                                Text("\(group.first?.pageIcon ?? "") \(group.first?.pageTitle ?? "")")
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("待办")
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("", selection: $showDone) {
+                        Text("未完成").tag(false)
+                        Text("已完成").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                }
+            }
+            .navigationDestination(for: UUID.self) { id in
+                PageScreen(pageID: id)
+            }
+        }
+    }
+
+    private func collect() -> [TodoRef] {
+        var out: [TodoRef] = []
+        for p in store.active.sorted(by: { $0.updated > $1.updated }) {
+            for b in p.blocks where b.type == .todo && b.checked == showDone {
+                if !showDone && b.text.isEmpty { continue }
+                out.append(TodoRef(id: b.id, pageID: p.id, pageTitle: p.displayTitle, pageIcon: p.icon, text: b.text, isRow: false))
+            }
+            for r in p.rows where (r.status == .done) == showDone {
+                out.append(TodoRef(id: r.id, pageID: p.id, pageTitle: p.displayTitle, pageIcon: p.icon, text: r.title, isRow: true))
+            }
+        }
+        return out
+    }
+
+    private func groupedKeys(_ items: [TodoRef]) -> [UUID] {
+        var seen: [UUID] = []
+        for i in items where !seen.contains(i.pageID) { seen.append(i.pageID) }
+        return seen
+    }
+
+    private func toggle(_ t: TodoRef) {
+        guard var p = store.page(t.pageID) else { return }
+        if t.isRow {
+            if let i = p.rows.firstIndex(where: { $0.id == t.id }) {
+                p.rows[i].status = p.rows[i].status == .done ? .todo : .done
+            }
+        } else if let i = p.blocks.firstIndex(where: { $0.id == t.id }) {
+            p.blocks[i].checked.toggle()
+        }
+        withAnimation { store.update(p) }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject var store: NoteStore
+    @AppStorage("appearance") private var appearance = 0
+    @AppStorage("accent") private var accent = 0
+    @AppStorage("fontSize") private var fontSize: Double = 17
+    @AppStorage("lockEnabled") private var lockEnabled = false
+    @State private var confirmReset = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: 14) {
+                        Text("✒️")
+                            .font(.system(size: 36))
+                            .frame(width: 60, height: 60)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent(accent).opacity(0.15)))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("墨页")
+                                .font(.title3.bold())
+                            Text("\(store.active.count) 个页面 · \(store.totalWords) 字 · \(store.openTasks) 个待办")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("外观") {
+                    Picker("主题", selection: $appearance) {
+                        Text("跟随系统").tag(0)
+                        Text("浅色").tag(1)
+                        Text("深色").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("强调色")
+                        HStack(spacing: 14) {
+                            ForEach(0..<Theme.accents.count, id: \.self) { i in
+                                Button {
+                                    accent = i
+                                } label: {
+                                    Circle()
+                                        .fill(Theme.accents[i].1)
+                                        .frame(width: 30, height: 30)
+                                        .overlay(
+                                            Image(systemName: "checkmark")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundColor(.white)
+                                                .opacity(accent == i ? 1 : 0)
+                                        )
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("正文字号")
+                            Spacer()
+                            Text("\(Int(fontSize))")
+                                .foregroundColor(.secondary)
+                        }
+                        Slider(value: $fontSize, in: 14...22, step: 1)
+                        Text("预览：好记性不如烂笔头。")
+                            .font(.system(size: fontSize))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section("隐私") {
+                    Toggle(isOn: $lockEnabled) {
+                        Label("面容 ID / 密码锁", systemImage: "faceid")
+                    }
+                }
+
+                Section("数据") {
+                    ShareLink(item: store.exportAllMarkdown()) {
+                        Label("导出全部为 Markdown", systemImage: "square.and.arrow.up")
+                    }
+                    Button(role: .destructive) {
+                        confirmReset = true
+                    } label: {
+                        Label("清空废纸篓", systemImage: "trash")
+                    }
+                    .disabled(store.trashed.isEmpty)
+                }
+
+                Section("关于") {
+                    LabeledContent("版本", value: "1.0")
+                    LabeledContent("数据存储", value: "仅保存在本机")
+                }
+            }
+            .navigationTitle("设置")
+            .confirmationDialog("彻底删除废纸篓里的页面？", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("删除", role: .destructive) { store.emptyTrash() }
+            }
+        }
+    }
+}

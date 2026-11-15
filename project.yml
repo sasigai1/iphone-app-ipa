@@ -1,4 +1,4 @@
-name: DiaryApp
+name: Moye
 
 options:
   bundleIdPrefix: com.sasigai1
@@ -11,30 +11,31 @@ settings:
     SWIFT_VERSION: "5.0"
 
 targets:
-  DiaryApp:
+  Moye:
     type: application
     platform: iOS
     sources:
       - path: Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sasigai1.diary
-        PRODUCT_NAME: DiaryApp
+        PRODUCT_BUNDLE_IDENTIFIER: com.sasigai1.moye
+        PRODUCT_NAME: Moye
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: "日记本"
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "用面容解锁你的日记本"
+        INFOPLIST_KEY_CFBundleDisplayName: "墨页"
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "用面容 ID 解锁你的笔记"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "插入图片到笔记"
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
 
 schemes:
-  DiaryApp:
+  Moye:
     build:
       targets:
-        DiaryApp: all
+        Moye: all
     run:
       config: Release

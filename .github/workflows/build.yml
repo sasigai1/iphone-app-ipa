@@ -3,7 +3,7 @@ name: Build IPA
 
 on:
   push:
-    branches: [main]
+    branches: [moye-notes]
   workflow_dispatch:
 
 permissions:
@@ -52,9 +52,9 @@ jobs:
               raw.append(0)
               for x in range(S):
                   t = (x * 0.45 + y * 0.55) / S
-                  r = 255 + (238 - 255) * t
-                  g = 178 + (86 - 178) * t
-                  b = 108 + (56 - 108) * t
+                  r = 30 + (92 - 30) * t
+                  g = 34 + (96 - 34) * t
+                  b = 58 + (235 - 58) * t
                   a = rrect(x, y, 176, 150, 848, 874, 112)
                   if a > 0:
                       r = r * (1 - a) + 255 * a
@@ -64,9 +64,9 @@ jobs:
                           if ln[0] - 2 <= y <= ln[1] + 2 and 240 <= x <= ln[2] + 2:
                               la = rrect(x, y, 250, ln[0], ln[2], ln[1], ln[3])
                               if la > 0:
-                                  r = r * (1 - la) + 240 * la
-                                  g = g * (1 - la) + 112 * la
-                                  b = b * (1 - la) + 56 * la
+                                  r = r * (1 - la) + 64 * la
+                                  g = g * (1 - la) + 72 * la
+                                  b = b * (1 - la) + 200 * la
                   raw.append(max(0, min(255, int(round(r)))))
                   raw.append(max(0, min(255, int(round(g)))))
                   raw.append(max(0, min(255, int(round(b)))))
@@ -85,8 +85,8 @@ jobs:
       - name: Build unsigned app
         run: |
           xcodebuild \
-            -project DiaryApp.xcodeproj \
-            -target DiaryApp \
+            -project Moye.xcodeproj \
+            -target Moye \
             -configuration Release \
             -sdk iphoneos \
             ARCHS=arm64 \
@@ -100,7 +100,7 @@ jobs:
 
       - name: Verify app icon
         run: |
-          APP=out/Release-iphoneos/DiaryApp.app
+          APP=out/Release-iphoneos/Moye.app
           ls -la "$APP"
           plutil -p "$APP/Info.plist" | grep -i -A3 icon || true
           if ls "$APP"/AppIcon*.png >/dev/null 2>&1; then echo ICON_OK; else echo ICON_MISSING; exit 1; fi
@@ -108,20 +108,20 @@ jobs:
       - name: Package into ipa
         run: |
           mkdir -p Payload
-          cp -R out/Release-iphoneos/DiaryApp.app Payload/
-          zip -qry DiaryApp.ipa Payload
-          ls -lh DiaryApp.ipa
+          cp -R out/Release-iphoneos/Moye.app Payload/
+          zip -qry Moye.ipa Payload
+          ls -lh Moye.ipa
 
       - name: Upload ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DiaryApp-unsigned-ipa
-          path: DiaryApp.ipa
+          name: Moye-unsigned-ipa
+          path: Moye.ipa
           retention-days: 30
 
       - name: Publish release with ipa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: 日记本 IPA
-          files: DiaryApp.ipa
+          tag_name: moye-v1.0-${{ github.run_number }}
+          name: 墨页 Notes IPA
+          files: Moye.ipa

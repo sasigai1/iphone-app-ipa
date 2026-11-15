@@ -1,2 +1,2 @@
-# iphone-app-ipa
-SwiftUI 小 App，GitHub Actions 自动编译出 ipa
+# 墨页 Notes
+类 Notion 的块式笔记 App（SwiftUI），GitHub Actions 编译未签名 ipa。
