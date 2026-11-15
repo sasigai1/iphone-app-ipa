@@ -175,6 +175,8 @@ struct SettingsView: View {
     @AppStorage("wordGoal") private var wordGoal = 300
     @AppStorage("fontDesign") private var fontDesign = 0
     @AppStorage("paper") private var paper = 0
+    @AppStorage("mdShortcuts") private var mdShortcuts = true
+    @AppStorage("trashAutoClean") private var trashAutoClean = true
     @State private var shareItem: ShareItem?
     @State private var showImporter = false
     @State private var importMessage: String?
@@ -256,6 +258,9 @@ struct SettingsView: View {
                 }
 
                 Section("编辑器") {
+                    Toggle(isOn: $mdShortcuts) {
+                        Label("Markdown 快捷输入", systemImage: "number")
+                    }
                     Picker(selection: $fontDesign) {
                         ForEach(0..<Typo.names.count, id: \.self) { i in Text(Typo.names[i]).tag(i) }
                     } label: {
@@ -309,6 +314,14 @@ struct SettingsView: View {
                     } label: {
                         Label("完整备份与自动备份", systemImage: "externaldrive.badge.checkmark")
                     }
+                    NavigationLink {
+                        ImportCenterView()
+                    } label: {
+                        Label("导入 Markdown / Anki 卡组", systemImage: "square.and.arrow.down")
+                    }
+                    Toggle(isOn: $trashAutoClean) {
+                        Label("废纸篓 30 天自动清理", systemImage: "trash.slash")
+                    }
                     Button {
                         if let u = store.markdownFile() { shareItem = ShareItem(url: u) }
                     } label: {
@@ -333,7 +346,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "5.0")
+                    LabeledContent("版本", value: "6.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }

@@ -148,7 +148,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew5View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew6View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -158,8 +158,9 @@ struct HomeView: View {
             .onAppear {
                 WordGoal.ensureBaseline(store.totalWords)
                 FullBackup.autoBackupIfNeeded()
-                if seenVersion != "5.0" {
-                    seenVersion = "5.0"
+                TrashCleaner.run(store)
+                if seenVersion != "6.0" {
+                    seenVersion = "6.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -222,7 +223,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("5.0 新功能", systemImage: "sparkles")
+                            Label("6.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -252,6 +253,12 @@ struct HomeView: View {
         case "stats": StatsDashboard()
         case "ledger": LedgerView()
         case "books": BookshelfView { id in path.append(id) }
+        case "body": BodyTrackerView()
+        case "movies": MovieListView()
+        case "capsules": CapsuleListView()
+        case "achievements": AchievementsView()
+        case "vocab": VocabView { id in path.append(id) }
+        case "import": ImportCenterView()
         default:
             let t = String(key.dropFirst(4))
             TagBrowser(selected: t.isEmpty ? nil : t)
@@ -271,7 +278,11 @@ struct HomeView: View {
             GridAction(icon: "calendar.day.timeline.left", title: "规划", color: .cyan) { openDaily(1) },
             GridAction(icon: "yensign.circle.fill", title: "记账", color: Color(red: 0.95, green: 0.38, blue: 0.42)) { path.append("ledger") },
             GridAction(icon: "books.vertical.fill", title: "书架", color: .brown) { path.append("books") },
-            GridAction(icon: "face.smiling.inverse", title: "心情", color: .mint) { openDaily(2) }
+            GridAction(icon: "face.smiling.inverse", title: "心情", color: .mint) { openDaily(2) },
+            GridAction(icon: "heart.text.square.fill", title: "身体", color: Color(red: 0.95, green: 0.3, blue: 0.4)) { path.append("body") },
+            GridAction(icon: "film.fill", title: "影视", color: Color(red: 0.4, green: 0.35, blue: 0.85)) { path.append("movies") },
+            GridAction(icon: "character.book.closed.fill", title: "生词本", color: Color(red: 0.2, green: 0.6, blue: 0.55)) { path.append("vocab") },
+            GridAction(icon: "trophy.fill", title: "成就", color: Color(red: 0.95, green: 0.65, blue: 0.1)) { path.append("achievements") }
         ]
     }
 
@@ -303,7 +314,14 @@ struct HomeView: View {
             PaletteAction(title: "记账", symbol: "yensign.circle", keywords: "ledger jizhang money") { path.append("ledger") },
             PaletteAction(title: "书架", symbol: "books.vertical", keywords: "books shujia read") { path.append("books") },
             PaletteAction(title: "心情日历", symbol: "face.smiling", keywords: "mood xinqing") { openDaily(2) },
-            PaletteAction(title: "5.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "生成本周回顾", symbol: "safari", keywords: "weekly review zhouhuigu") { path.append(WeeklyReview.create(store)) },
+            PaletteAction(title: "时间胶囊", symbol: "envelope.badge", keywords: "capsule jiaonang future") { path.append("capsules") },
+            PaletteAction(title: "身体数据", symbol: "heart.text.square", keywords: "body water sleep weight") { path.append("body") },
+            PaletteAction(title: "影视清单", symbol: "film", keywords: "movie yingshi") { path.append("movies") },
+            PaletteAction(title: "生词本", symbol: "character.book.closed", keywords: "vocab dictionary cidian") { path.append("vocab") },
+            PaletteAction(title: "成就与年度报告", symbol: "trophy", keywords: "achievement year report") { path.append("achievements") },
+            PaletteAction(title: "导入 Markdown / Anki", symbol: "square.and.arrow.down", keywords: "import daoru") { path.append("import") },
+            PaletteAction(title: "6.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 

@@ -4,10 +4,13 @@ import VisionKit
 
 struct PageScreen: View {
     @EnvironmentObject var store: NoteStore
+    @ObservedObject private var privacy = PrivacyStore.shared
     let pageID: UUID
 
     var body: some View {
-        if store.page(pageID) != nil {
+        if let p = store.page(pageID), privacy.isLocked(pageID) {
+            PrivateGate(pageID: pageID, icon: p.icon)
+        } else if store.page(pageID) != nil {
             PageEditor(pageID: pageID, page: store.binding(pageID))
         } else {
             VStack(spacing: 10) {
@@ -53,6 +56,8 @@ struct PageEditor: View {
     @State private var showOCRPhoto = false
     @State private var showReading = false
     @State private var showOrganizer = false
+    @State private var showShareCard = false
+    @ObservedObject private var privacy = PrivacyStore.shared
     @AppStorage("paper") private var paper = 0
     @AppStorage("fontDesign") private var fontDesign = 0
 
@@ -106,6 +111,10 @@ struct PageEditor: View {
         ))
         .modifier(PageExtras(page: $page, sheet: $extraSheet, presenting: $presenting, shareURL: $exportItem))
         .modifier(OCRTools(page: $page, showScanner: $showScanner, showPhoto: $showOCRPhoto))
+        .modifier(EditorPowerTools(page: $page))
+        .sheet(isPresented: $showShareCard) {
+            ShareCardSheet(page: page)
+        }
         .sheet(isPresented: $showOrganizer) {
             BlockOrganizer(blocks: $page.blocks)
         }
@@ -470,6 +479,10 @@ struct PageEditor: View {
                 if page.kind == .document {
                     Button { showOutline = true } label: { Label("大纲", systemImage: "list.bullet.indent") }
                     Button { focused = nil; showReading = true } label: { Label("阅读视图", systemImage: "book") }
+                    Button { focused = nil; showShareCard = true } label: { Label("分享卡片 / 导出 HTML", systemImage: "photo.on.rectangle.angled") }
+                    Button { privacy.toggle(pageID) } label: {
+                        Label(privacy.ids.contains(pageID) ? "取消私密" : "设为私密页（面容 ID）", systemImage: privacy.ids.contains(pageID) ? "lock.open" : "lock.shield")
+                    }
                     if page.kind != .database && !page.locked {
                         Button { focused = nil; showOrganizer = true } label: { Label("整理块（排序 / 批量）", systemImage: "arrow.up.arrow.down") }
                     }

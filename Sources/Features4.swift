@@ -175,6 +175,7 @@ final class LifeStore: ObservableObject {
 struct DailyView: View {
     @ObservedObject private var life = LifeStore.shared
     @AppStorage("dailyTab") private var tab = 0
+    @State private var confetti = false
     @State private var editingHabit: Habit?
     @State private var editingCountdown: Countdown?
 
@@ -212,6 +213,17 @@ struct DailyView: View {
                 }
             }
             .sheet(item: $editingHabit) { h in HabitEditor(habit: h) }
+            .overlay {
+                if confetti { ConfettiView().ignoresSafeArea().allowsHitTesting(false) }
+            }
+            .onChange(of: life.todayProgress.0) { n in
+                let total = life.todayProgress.1
+                if n == total && total > 0 {
+                    confetti = true
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { confetti = false }
+                }
+            }
             .sheet(item: $editingCountdown) { c in CountdownEditor(item: c) }
         }
     }
@@ -356,6 +368,9 @@ struct HabitEditor: View {
                     }
                 }
                 if life.habits.contains(where: { $0.id == habit.id }) {
+                    Section("提醒") {
+                        HabitReminderRow(habit: habit)
+                    }
                     Section {
                         LabeledContent("累计打卡", value: "\(habit.done.count) 天")
                         LabeledContent("最长记录起点", value: habit.created.shortDate)
@@ -653,6 +668,7 @@ struct ReadingView: View {
     @Environment(\.dismiss) private var dismiss
     let page: Page
     @AppStorage("paper") private var paper = 0
+    @StateObject private var speaker = Speaker()
 
     var body: some View {
         NavigationStack {
@@ -668,8 +684,14 @@ struct ReadingView: View {
             }
             .background(Paper.color(paper == 0 ? 1 : paper).ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .onDisappear { speaker.stop() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { speaker.toggle(Speaker.text(of: page)) } label: {
+                        Image(systemName: speaker.speaking && !speaker.paused ? "pause.circle.fill" : "speaker.wave.2.circle")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Picker("纸张", selection: $paper) {

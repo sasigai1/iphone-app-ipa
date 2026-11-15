@@ -64,6 +64,7 @@ struct RootView: View {
         }
         .onChange(of: phase) { p in
             if p == .background && lockEnabled { locked = true }
+            if p == .background { PrivacyStore.shared.lockAll() }
         }
     }
 

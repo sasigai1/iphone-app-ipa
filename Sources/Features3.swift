@@ -65,6 +65,13 @@ final class CardStore: ObservableObject {
                     if !f.isEmpty && !bk.isEmpty {
                         out.append(Flashcard(id: b.id.uuidString, pageID: p.id, pageTitle: p.displayTitle, pageIcon: p.icon, front: f, back: bk))
                     }
+                } else if let o = b.text.range(of: "{{"), b.text.range(of: "}}", range: o.upperBound..<b.text.endIndex) != nil {
+                    let pattern = #"\{\{(.+?)\}\}"#
+                    let front = b.text.replacingOccurrences(of: pattern, with: "［ … ］", options: .regularExpression)
+                    let back = b.text.replacingOccurrences(of: pattern, with: "【$1】", options: .regularExpression)
+                    if front != back {
+                        out.append(Flashcard(id: b.id.uuidString, pageID: p.id, pageTitle: p.displayTitle, pageIcon: p.icon, front: front.trimmingCharacters(in: .whitespacesAndNewlines), back: back.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    }
                 } else if isDeck && b.type == .toggle {
                     let f = b.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     let bk = b.detail.trimmingCharacters(in: .whitespacesAndNewlines)
