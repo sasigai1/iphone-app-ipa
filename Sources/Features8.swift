@@ -1572,11 +1572,14 @@ final class EmbyPlayerModel: ObservableObject {
     let player = AVPlayer()
     @Published var loading = true
     @Published var failed = false
+    @Published var vlcURL: URL?
+    var resumeSeconds: Double { Double(resumeTicks) / 10_000_000 }
     @Published var mode = ""
     @Published var log: [String] = []
     private var timer: Any?
     private(set) var item: EmbyItem? { didSet { if let i = item { lastItem = i } } }
     private var lastItem: EmbyItem?
+    var lastSeen: EmbyItem? { lastItem }
     private var queue: [EmbyPlayback.Source] = []
     private var resumeTicks: Int64 = 0
     private var statusObs: NSKeyValueObservation?
@@ -1609,6 +1612,7 @@ final class EmbyPlayerModel: ObservableObject {
 
     func retry() {
         guard let it = item ?? lastItem else { return }
+        vlcURL = nil
         failed = false
         log = []
         attempt = 0
@@ -1619,6 +1623,12 @@ final class EmbyPlayerModel: ObservableObject {
         watchdog?.cancel()
         guard !queue.isEmpty else {
             loading = false
+            if VLCSupport.available, vlcURL == nil, let it = item, let u = EmbyPlayback.externalURL(it.Id) {
+                log.append("改用内置 VLC 内核直接播放原文件")
+                player.replaceCurrentItem(with: nil)
+                vlcURL = u
+                return
+            }
             failed = true
             player.replaceCurrentItem(with: nil)
             return
@@ -1626,6 +1636,19 @@ final class EmbyPlayerModel: ObservableObject {
         let src = queue.removeFirst()
         attempt += 1
         play(src)
+    }
+
+    /// Ask the server directly why a playlist failed (403 = no transcoding permission, 500 = transcoder error…).
+    private func probe(_ src: EmbyPlayback.Source) {
+        Task {
+            var r = URLRequest(url: src.url)
+            r.timeoutInterval = 10
+            r.setValue(EmbyClient.shared.token, forHTTPHeaderField: "X-Emby-Token")
+            guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let body = String(data: d.prefix(120), encoding: .utf8)?.replacingOccurrences(of: "\n", with: " ") ?? ""
+            await MainActor.run { self.log.append("服务器返回 HTTP \(code)：\(body)") }
+        }
     }
 
     private func note(_ src: EmbyPlayback.Source, _ msg: String) {
@@ -1652,6 +1675,7 @@ final class EmbyPlayerModel: ObservableObject {
                     var msg = e?.localizedDescription ?? "未知错误"
                     if let u = e?.userInfo[NSUnderlyingErrorKey] as? NSError { msg += "（\(u.domain) \(u.code)）" } else if let e = e { msg += "（\(e.code)）" }
                     self.note(src, msg)
+                    if src.transcoding { self.probe(src) }
                     self.next()
                 default: break
                 }
@@ -1713,7 +1737,14 @@ struct EmbyPlayerView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
-            VideoPlayer(player: model.player).ignoresSafeArea()
+            if let u = model.vlcURL {
+                VLCPlayerView(url: u, startSeconds: model.resumeSeconds) { secs in
+                    if let it = model.item ?? model.lastSeen, secs > 1 { EmbyClient.shared.report(it.Id, ticks: Int64(secs * 10_000_000), stopped: true) }
+                }
+                .ignoresSafeArea()
+            } else {
+                VideoPlayer(player: model.player).ignoresSafeArea()
+            }
             if model.loading && !model.failed {
                 VStack(spacing: 10) {
                     ProgressView().tint(.white)
