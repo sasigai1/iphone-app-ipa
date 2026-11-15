@@ -20,9 +20,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sasigai1.moye
         PRODUCT_NAME: Moye
-        MARKETING_VERSION: "7.0"
-        CURRENT_PROJECT_VERSION: "8"
+        MARKETING_VERSION: "8.0"
+        CURRENT_PROJECT_VERSION: "9"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: MoyeInfo.plist
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "连接你局域网里的 Emby 服务器"
         INFOPLIST_KEY_CFBundleDisplayName: "墨页"
         INFOPLIST_KEY_NSFaceIDUsageDescription: "用面容 ID 解锁你的笔记"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

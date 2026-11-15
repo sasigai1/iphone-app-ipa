@@ -622,6 +622,9 @@ struct MovieListView: View {
         .navigationTitle("影视清单")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                NavigationLink { EmbyHomeView() } label: { Label("Emby", systemImage: "play.rectangle.on.rectangle") }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button { editing = Movie(status: filter == 3 ? 0 : filter) } label: { Image(systemName: "plus.circle.fill").font(.title3) }
             }
         }

@@ -40,6 +40,10 @@ struct Book: Codable, Identifiable, Equatable {
     var finished: Date? = nil
     var added: Date = Date()
     var pageID: UUID? = nil
+    var file: String? = nil
+    var readChapter: Int? = nil
+    var readPara: Int? = nil
+    var lastRead: Date? = nil
 
     var progress: Double { total > 0 ? min(1, Double(current) / Double(total)) : 0 }
 }
@@ -778,6 +782,7 @@ struct BookshelfView: View {
                     statBox("\(readThisYear)", "\(year) 读完", .green)
                     statBox("\(life.data.books.reduce(0) { $0 + $1.quotes.count })", "书摘", .orange)
                 }
+                ContinueReadingCard()
                 Picker("", selection: $filter) {
                     Text("在读").tag(1)
                     Text("想读").tag(0)
@@ -788,7 +793,7 @@ struct BookshelfView: View {
                 if shown.isEmpty {
                     VStack(spacing: 10) {
                         Text("📚").font(.system(size: 50))
-                        Text("书架空空的，点右上角 + 添加一本书").foregroundColor(.secondary)
+                        Text("书架空空的，点右上角 + 添加一本书，或用导入按钮导入 TXT / EPUB / PDF").foregroundColor(.secondary).multilineTextAlignment(.center)
                     }
                     .padding(40)
                 }
@@ -818,6 +823,7 @@ struct BookshelfView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("书架")
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) { BookImportButton() }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { newBook = Book(status: filter == 3 ? 1 : filter, color: Int.random(in: 0..<Theme.covers.count)) } label: {
                     Image(systemName: "plus.circle.fill").font(.title3)
@@ -964,6 +970,9 @@ struct BookDetail: View {
                     }
                     .padding(.vertical, 6)
                 }
+                Section {
+                    ReadBookButton(book: b)
+                }
                 Section("进度") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -1031,6 +1040,7 @@ struct BookDetail: View {
             .sheet(item: $editing) { bk in BookEditor(book: bk) }
             .confirmationDialog("从书架移除这本书？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("移除", role: .destructive) {
+                    EbookFiles.remove(life.data.books.first { $0.id == bookID }?.file)
                     life.data.books.removeAll { $0.id == bookID }
                     dismiss()
                 }
@@ -1189,7 +1199,7 @@ enum FullBackup {
                 continue
             }
             if (try? u.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true { continue }
-            if rel.hasSuffix(".json") || rel.hasPrefix("images/") || rel.hasPrefix("history/") { out.append(rel) }
+            if (rel.hasSuffix(".json") && !rel.hasPrefix("books/")) || rel.hasPrefix("images/") || rel.hasPrefix("history/") { out.append(rel) }
         }
         return out
     }

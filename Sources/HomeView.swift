@@ -149,7 +149,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew7View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew8View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -161,8 +161,8 @@ struct HomeView: View {
                 FullBackup.autoBackupIfNeeded()
                 TrashCleaner.run(store)
                 Life7.shared.rollSubscriptions()
-                if seenVersion != "7.0" {
-                    seenVersion = "7.0"
+                if seenVersion != "8.0" {
+                    seenVersion = "8.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -225,7 +225,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("7.0 新功能", systemImage: "sparkles")
+                            Label("8.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -262,6 +262,7 @@ struct HomeView: View {
         case "vocab": VocabView { id in path.append(id) }
         case "import": ImportCenterView()
         case "toolbox": ToolboxView { k in path.append(k) }
+        case "emby": EmbyHomeView()
         case "goals": GoalsView()
         case "people": PeopleView()
         case "subs": SubscriptionsView()
@@ -343,7 +344,8 @@ struct HomeView: View {
             PaletteAction(title: "打包清单", symbol: "suitcase", keywords: "packing dabao") { path.append("packs") },
             PaletteAction(title: "随机漫步", symbol: "shuffle", keywords: "random wander suiji") { path.append("wander") },
             PaletteAction(title: "标签管理", symbol: "number.square", keywords: "tags biaoqian") { path.append("tags") },
-            PaletteAction(title: "7.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "Emby 媒体库", symbol: "play.rectangle.on.rectangle", keywords: "emby jellyfin") { path.append("emby") },
+            PaletteAction(title: "8.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 
