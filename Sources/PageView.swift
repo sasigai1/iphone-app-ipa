@@ -44,6 +44,10 @@ struct PageEditor: View {
     @State private var showLinkPicker = false
     @State private var linkInsertTarget: UUID?
     @State private var photoForCover = false
+    @State private var extraSheet: PageExtraSheet?
+    @State private var presenting = false
+    @State private var exportItem: ShareItem?
+    @State private var savedTemplate = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -93,6 +97,12 @@ struct PageEditor: View {
             onSlashPick: { type in applyType(type, to: slashTarget) },
             onPhotoData: { name in insertImage(name) }
         ))
+        .modifier(PageExtras(page: $page, sheet: $extraSheet, presenting: $presenting, shareURL: $exportItem))
+        .alert("已存为模板", isPresented: $savedTemplate) {
+            Button("好") {}
+        } message: {
+            Text("在“从模板新建”的“我的模板”里可以找到它。")
+        }
     }
 
     private func insertLink(_ name: String) {
@@ -440,7 +450,27 @@ struct PageEditor: View {
             Menu {
                 if page.kind == .document {
                     Button { showOutline = true } label: { Label("大纲", systemImage: "list.bullet.indent") }
+                    Button { focused = nil; presenting = true } label: { Label("演示模式", systemImage: "play.rectangle") }
+                    Button { focused = nil; extraSheet = .findReplace } label: { Label("查找与替换", systemImage: "magnifyingglass") }
                 }
+                Button { focused = nil; extraSheet = .history } label: { Label("版本历史", systemImage: "clock.arrow.circlepath") }
+                Menu {
+                    Button {
+                        focused = nil
+                        exportItem = PageExporter.pdf(page, titleFor: { store.title($0) }).map { ShareItem(url: $0) }
+                    } label: { Label("导出 PDF", systemImage: "doc.richtext") }
+                    Button {
+                        focused = nil
+                        exportItem = PageExporter.image(page, titleFor: { store.title($0) }).map { ShareItem(url: $0) }
+                    } label: { Label("导出长图", systemImage: "photo") }
+                    Button {
+                        UserTemplates.save(page)
+                        savedTemplate = true
+                    } label: { Label("存为模板", systemImage: "square.on.square.dashed") }
+                } label: {
+                    Label("导出与复用", systemImage: "square.and.arrow.up.on.square")
+                }
+                Divider()
                 Button {
                     page.locked.toggle()
                 } label: {

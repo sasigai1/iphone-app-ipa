@@ -15,6 +15,8 @@ struct DatabaseView: View {
                 listView
             } else if mode == 1 {
                 boardView
+            } else if mode == 3 {
+                DatabaseChartView(rows: visibleRows)
             } else {
                 CalendarMonthView(rows: visibleRows) { r in editing = r }
             }
@@ -76,9 +78,10 @@ struct DatabaseView: View {
                 Label("列表", systemImage: "list.bullet").tag(0)
                 Label("看板", systemImage: "rectangle.split.3x1").tag(1)
                 Label("日历", systemImage: "calendar").tag(2)
+                Label("图表", systemImage: "chart.bar").tag(3)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 200)
+            .frame(maxWidth: 240)
 
             Menu {
                 Button {

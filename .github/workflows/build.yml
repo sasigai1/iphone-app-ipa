@@ -122,6 +122,6 @@ jobs:
       - name: Publish release with ipa
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: moye-v2.0-${{ github.run_number }}
+          tag_name: moye-v3.0-${{ github.run_number }}
           name: 墨页 Notes IPA
           files: Moye.ipa

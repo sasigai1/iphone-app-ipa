@@ -71,6 +71,23 @@ enum Templates {
                 p.tags = ["知识"]
                 return p
             },
+            PageTemplate(name: "闪卡学习", icon: "🃏", desc: "问题 :: 答案，按遗忘曲线复习") {
+                var tip = b(.callout, "每行写成 **问题 :: 答案** 就是一张卡；带 #闪卡 标签的页面里，折叠列表也会变成卡片。去主页的“闪卡”开始复习。")
+                tip.emoji = "🃏"
+                var t1 = b(.toggle, "间隔重复的核心思想是什么？")
+                t1.detail = "在快要忘记的时候复习，间隔越来越长"
+                var p = page("我的卡组", "🃏", cover: 6, [
+                    tip,
+                    b(.h2, "示例"),
+                    b(.bullet, "光速约为多少？ :: 约 30 万公里每秒"),
+                    b(.bullet, "“温故而知新”出自哪里？ :: 《论语·为政》"),
+                    t1,
+                    b(.h2, "我的卡片"),
+                    b(.bullet, "")
+                ])
+                p.tags = ["闪卡"]
+                return p
+            },
             PageTemplate(name: "白板草图", icon: "🖍️", desc: "手绘想法、流程图和灵感") {
                 page("草图", "🖍️", cover: 5, [
                     b(.h2, "灵感"),

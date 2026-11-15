@@ -172,6 +172,7 @@ struct SettingsView: View {
     @State private var confirmReset = false
     @AppStorage("pageSort") private var pageSort = 0
     @AppStorage("showHeatmap") private var showHeatmap = true
+    @AppStorage("wordGoal") private var wordGoal = 300
     @State private var shareItem: ShareItem?
     @State private var showImporter = false
     @State private var importMessage: String?
@@ -262,6 +263,9 @@ struct SettingsView: View {
                     } label: {
                         Label("页面排序", systemImage: "arrow.up.arrow.down")
                     }
+                    Stepper(value: $wordGoal, in: 50...5000, step: 50) {
+                        Label("每日字数目标 \(wordGoal)", systemImage: "target")
+                    }
                     LabeledContent("连续写作", value: "\(store.streak) 天")
                     LabeledContent("今日专注", value: "\(store.focusToday) 分钟")
                     LabeledContent("标签数", value: "\(store.allTags.count)")
@@ -298,7 +302,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "2.0")
+                    LabeledContent("版本", value: "3.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }

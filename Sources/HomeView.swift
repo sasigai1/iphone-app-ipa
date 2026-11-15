@@ -10,6 +10,10 @@ struct HomeView: View {
     @AppStorage("seenVersion") private var seenVersion = ""
     @AppStorage("pageSort") private var pageSort = 0
     @AppStorage("showHeatmap") private var showHeatmap = true
+    @AppStorage("wordGoal") private var wordGoal = 300
+    @State private var showCapture = false
+    @State private var showPalette = false
+    @ObservedObject private var cards = CardStore.shared
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -21,9 +25,12 @@ struct HomeView: View {
                 }
 
                 Section {
-                    quickActions
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+                    VStack(spacing: 10) {
+                        quickActions
+                        quickActions2
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 }
 
                 if showHeatmap {
@@ -141,18 +148,32 @@ struct HomeView: View {
                 PageScreen(pageID: id)
             }
             .navigationDestination(for: String.self) { key in
-                let t = String(key.dropFirst(4))
-                TagBrowser(selected: t.isEmpty ? nil : t)
+                destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNewView() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew3View() }
+            .sheet(isPresented: $showCapture) {
+                QuickCaptureView { id in path.append(id) }
+            }
+            .sheet(isPresented: $showPalette) {
+                CommandPalette(actions: paletteActions) { id in path.append(id) }
+            }
             .onAppear {
-                if seenVersion != "2.0" {
-                    seenVersion = "2.0"
+                WordGoal.ensureBaseline(store.totalWords)
+                if seenVersion != "3.0" {
+                    seenVersion = "3.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showPalette = true
+                    } label: {
+                        Image(systemName: "command")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button {
@@ -181,9 +202,29 @@ struct HomeView: View {
                             Label("专注番茄钟", systemImage: "timer")
                         }
                         Button {
+                            showCapture = true
+                        } label: {
+                            Label("快速记录", systemImage: "tray.and.arrow.down")
+                        }
+                        Button {
+                            path.append("graph")
+                        } label: {
+                            Label("知识图谱", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        Button {
+                            path.append("cards")
+                        } label: {
+                            Label("闪卡复习", systemImage: "rectangle.stack")
+                        }
+                        Button {
+                            path.append("stats")
+                        } label: {
+                            Label("数据看板", systemImage: "chart.bar.xaxis")
+                        }
+                        Button {
                             showWhatsNew = true
                         } label: {
-                            Label("2.0 新功能", systemImage: "sparkles")
+                            Label("3.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -203,6 +244,39 @@ struct HomeView: View {
                 TrashView()
             }
         }
+    }
+
+    @ViewBuilder
+    private func destination(_ key: String) -> some View {
+        switch key {
+        case "graph": GraphView { id in path.append(id) }
+        case "cards": FlashcardHub { id in path.append(id) }
+        case "stats": StatsDashboard()
+        default:
+            let t = String(key.dropFirst(4))
+            TagBrowser(selected: t.isEmpty ? nil : t)
+        }
+    }
+
+    private var paletteActions: [PaletteAction] {
+        [
+            PaletteAction(title: "新建页面", symbol: "doc.badge.plus", keywords: "new page xinjian") { path.append(store.create()) },
+            PaletteAction(title: "新建数据库", symbol: "tablecells", keywords: "database shujuku") { path.append(store.create(title: "", kind: .database)) },
+            PaletteAction(title: "从模板新建", symbol: "square.grid.2x2", keywords: "template moban") { showTemplates = true },
+            PaletteAction(title: "快速记录", symbol: "tray.and.arrow.down", keywords: "capture inbox shoujianxiang") { showCapture = true },
+            PaletteAction(title: "今日日记", symbol: "sun.max", keywords: "journal riji") { path.append(store.todayJournal()) },
+            PaletteAction(title: "打开收件箱", symbol: "tray", keywords: "inbox") { path.append(store.inboxPage()) },
+            PaletteAction(title: "知识图谱", symbol: "point.3.connected.trianglepath.dotted", keywords: "graph tupu") { path.append("graph") },
+            PaletteAction(title: "闪卡复习", symbol: "rectangle.stack", keywords: "flashcard review fuxi") { path.append("cards") },
+            PaletteAction(title: "数据看板", symbol: "chart.bar.xaxis", keywords: "stats tongji") { path.append("stats") },
+            PaletteAction(title: "专注番茄钟", symbol: "timer", keywords: "focus pomodoro zhuanzhu") { showFocus = true },
+            PaletteAction(title: "所有标签", symbol: "tag", keywords: "tags biaoqian") { path.append("tag:") },
+            PaletteAction(title: "随机打开一页", symbol: "shuffle", keywords: "random suiji") {
+                if let p = store.active.filter({ $0.kind == .document }).randomElement() { path.append(p.id) }
+            },
+            PaletteAction(title: "废纸篓", symbol: "trash", keywords: "trash") { showTrash = true },
+            PaletteAction(title: "3.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+        ]
     }
 
     private var greeting: String {
@@ -228,6 +302,8 @@ struct HomeView: View {
                 StatPill(icon: "timer", text: "专注 \(store.focusToday) 分")
             }
             }
+            GoalRing(value: WordGoal.today(store.totalWords), goal: wordGoal)
+                .padding(.top, 6)
         }
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,6 +322,24 @@ struct HomeView: View {
             }
             QuickButton(icon: "sparkles", title: "模板", color: .pink) {
                 showTemplates = true
+            }
+        }
+    }
+
+    private var quickActions2: some View {
+        let due = cards.dueCount(store.active)
+        return HStack(spacing: 10) {
+            QuickButton(icon: "tray.and.arrow.down", title: "快速记录", color: .teal) {
+                showCapture = true
+            }
+            QuickButton(icon: "rectangle.stack", title: due > 0 ? "闪卡 \(due)" : "闪卡", color: .purple) {
+                path.append("cards")
+            }
+            QuickButton(icon: "point.3.connected.trianglepath.dotted", title: "图谱", color: .indigo) {
+                path.append("graph")
+            }
+            QuickButton(icon: "chart.bar.xaxis", title: "看板", color: .green) {
+                path.append("stats")
             }
         }
     }

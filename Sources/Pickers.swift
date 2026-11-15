@@ -144,12 +144,51 @@ struct CoverPicker: View {
 struct TemplatePicker: View {
     @Environment(\.dismiss) private var dismiss
     let onPick: (Page) -> Void
+    @State private var mine: [Page] = UserTemplates.load()
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
 
     var body: some View {
         NavigationStack {
             ScrollView {
+                if !mine.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("我的模板")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(mine) { t in
+                                    Button {
+                                        onPick(UserTemplates.instantiate(t))
+                                        dismiss()
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text(t.icon).font(.system(size: 30))
+                                            Text(t.displayTitle).font(.subheadline.weight(.semibold)).foregroundColor(.primary).lineLimit(1)
+                                            Text("\(t.blocks.count) 个块").font(.caption2).foregroundColor(.secondary)
+                                        }
+                                        .frame(width: 120, height: 100, alignment: .topLeading)
+                                        .padding(12)
+                                        .card()
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            UserTemplates.remove(t.id)
+                                            mine = UserTemplates.load()
+                                        } label: { Label("删除模板", systemImage: "trash") }
+                                    }
+                                }
+                            }
+                        }
+                        Text("系统模板")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.top, 6)
+                    }
+                    .padding([.horizontal, .top])
+                }
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(Templates.all) { t in
                         Button {
