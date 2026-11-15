@@ -1464,10 +1464,13 @@ enum EmbyPlayback {
             "MaxStaticBitrate": 100_000_000,
             "MusicStreamingTranscodingBitrate": 192_000,
             "DirectPlayProfiles": [
-                ["Container": "mp4,m4v,mov", "Type": "Video", "VideoCodec": "h264,hevc,h265", "AudioCodec": "aac,mp3,ac3,eac3,alac,flac"]
+                ["Container": "mp4,m4v,mov", "Type": "Video", "VideoCodec": "h264,hevc,h265", "AudioCodec": "aac,mp3,ac3,eac3,alac,flac"],
+                ["Container": "mp3,aac,m4a,flac,alac,wav", "Type": "Audio"]
             ],
+            // Allow the server to *copy* h264/hevc and common audio into HLS (cheap remux) instead of re-encoding.
             "TranscodingProfiles": [
-                ["Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac,mp3", "Protocol": "hls", "Context": "Streaming", "MaxAudioChannels": "6", "MinSegments": 1, "BreakOnNonKeyFrames": true]
+                ["Container": "mp4", "Type": "Video", "VideoCodec": "hevc,h264", "AudioCodec": "aac,ac3,eac3,mp3", "Protocol": "hls", "Context": "Streaming", "MaxAudioChannels": "6", "MinSegments": 1, "BreakOnNonKeyFrames": true],
+                ["Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac,ac3,eac3,mp3", "Protocol": "hls", "Context": "Streaming", "MaxAudioChannels": "6", "MinSegments": 1, "BreakOnNonKeyFrames": true]
             ],
             "ContainerProfiles": [],
             "CodecProfiles": [],
@@ -1486,6 +1489,7 @@ enum EmbyPlayback {
         var msid = id
         var container = ""
         var transcodeURL: URL?
+        var canDirect = true
         if let u = c.url("/Items/\(id)/PlaybackInfo", ["UserId": c.userId, "StartTimeTicks": "\(startTicks)", "IsPlayback": "true", "AutoOpenLiveStream": "true", "MaxStreamingBitrate": "40000000"]) {
             var r = URLRequest(url: u)
             r.httpMethod = "POST"
@@ -1500,22 +1504,47 @@ enum EmbyPlayback {
                 psid = (j["PlaySessionId"] as? String) ?? psid
                 msid = (ms["Id"] as? String) ?? id
                 container = ((ms["Container"] as? String) ?? "").lowercased()
+                canDirect = (ms["SupportsDirectPlay"] as? Bool) ?? true
+                // Audio codecs AVPlayer can't decode inside an otherwise native file
+                if let streams = ms["MediaStreams"] as? [[String: Any]] {
+                    let bad = ["dts", "truehd", "dca", "pcm_s24le", "opus", "vorbis"]
+                    if streams.contains(where: { ($0["Type"] as? String) == "Audio" && bad.contains((($0["Codec"] as? String) ?? "").lowercased()) && (($0["IsDefault"] as? Bool) ?? true) }) { canDirect = false }
+                }
                 if let t = ms["TranscodingUrl"] as? String, !t.isEmpty { transcodeURL = absolute(t) }
             }
         }
         let first = container.split(separator: ",").first.map(String.init) ?? ""
         let nativeContainer = ["mp4", "m4v", "mov"].contains(first)
         let direct = c.url("/Videos/\(id)/stream" + (first.isEmpty ? "" : ".\(first)"), ["Static": "true", "MediaSourceId": msid, "PlaySessionId": psid, "DeviceId": c.deviceId])
-        if nativeContainer, let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
+        if nativeContainer && canDirect, let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
         if let u = transcodeURL { out.append(Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)) }
-        if let u = hls(id, msid, psid) { out.append(Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)) }
-        if !nativeContainer, let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
+        // Remux first (stream copy, light on the server), then full transcode to h264/aac.
+        for v in hlsVariants(id, msid, psid, startTicks) { out.append(Source(url: v, transcoding: true, mediaSourceId: msid, playSessionId: psid)) }
+        if !(nativeContainer && canDirect), let u = direct { out.append(Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)) }
         return out
     }
 
     /// Plain direct-file URL for external players (Infuse / VLC / nPlayer).
     static func externalURL(_ id: String) -> URL? {
         EmbyClient.shared.url("/Videos/\(id)/stream", ["Static": "true", "DeviceId": EmbyClient.shared.deviceId])
+    }
+
+    static func hlsVariants(_ id: String, _ msid: String, _ psid: String, _ start: Int64) -> [URL] {
+        let c = EmbyClient.shared
+        func make(_ extra: [String: String]) -> URL? {
+            var q: [String: String] = ["DeviceId": c.deviceId, "MediaSourceId": msid, "PlaySessionId": psid + String(extra.count),
+                                       "BreakOnNonKeyFrames": "true", "MaxAudioChannels": "6", "StartTimeTicks": "\(start)"]
+            for (k, v) in extra { q[k] = v }
+            return c.url("/Videos/\(id)/master.m3u8", q)
+        }
+        return [
+            // 1) h264 copy into TS (fastest, plays everywhere)
+            make(["VideoCodec": "h264", "AudioCodec": "aac,ac3,eac3,mp3", "SegmentContainer": "ts", "AllowVideoStreamCopy": "true", "AllowAudioStreamCopy": "true", "TranscodingMaxAudioChannels": "6"]),
+            // 2) hevc / h264 copy into fMP4 (HEVC on Apple must be fMP4 + hvc1)
+            make(["VideoCodec": "hevc,h264", "AudioCodec": "aac,ac3,eac3", "SegmentContainer": "mp4", "AllowVideoStreamCopy": "true", "AllowAudioStreamCopy": "true", "RequireAvc": "false"]),
+            // 3) full transcode to h264 + aac stereo
+            make(["VideoCodec": "h264", "AudioCodec": "aac", "SegmentContainer": "ts", "AllowVideoStreamCopy": "false", "AllowAudioStreamCopy": "false", "VideoBitrate": "8000000", "AudioBitrate": "192000", "TranscodingMaxAudioChannels": "2", "MaxAudioChannels": "2"])
+        ].compactMap { $0 }
     }
 
     static func hls(_ id: String, _ msid: String, _ psid: String) -> URL? {

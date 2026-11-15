@@ -7,6 +7,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接你局域网里的 Emby / Jellyfin 服务器播放影视</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>语音闪念：录下你说的话</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
