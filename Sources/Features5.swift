@@ -1326,6 +1326,8 @@ struct FullBackupView: View {
         } else {
             store.load()
             Life5.shared.reload()
+            Life6.shared.reload()
+            Life7.shared.reload()
             message = "已恢复 \(n) 个文件。习惯、闪卡等数据会在重新打开应用后完全生效。"
         }
     }

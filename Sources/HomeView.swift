@@ -22,6 +22,7 @@ struct HomeView: View {
                     VStack(spacing: 14) {
                         HomeHero(greeting: greeting + " 👋")
                         QuickGrid(items: gridItems)
+                        Life7Strip { k in path.append(k) }
                         TodayPanel(onOpen: { id in path.append(id) }, onDaily: {
                             NotificationCenter.default.post(name: .moyeSwitchTab, object: 4)
                         })
@@ -148,7 +149,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew6View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew7View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -159,8 +160,9 @@ struct HomeView: View {
                 WordGoal.ensureBaseline(store.totalWords)
                 FullBackup.autoBackupIfNeeded()
                 TrashCleaner.run(store)
-                if seenVersion != "6.0" {
-                    seenVersion = "6.0"
+                Life7.shared.rollSubscriptions()
+                if seenVersion != "7.0" {
+                    seenVersion = "7.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -223,7 +225,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("6.0 新功能", systemImage: "sparkles")
+                            Label("7.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -259,6 +261,16 @@ struct HomeView: View {
         case "achievements": AchievementsView()
         case "vocab": VocabView { id in path.append(id) }
         case "import": ImportCenterView()
+        case "toolbox": ToolboxView { k in path.append(k) }
+        case "goals": GoalsView()
+        case "people": PeopleView()
+        case "subs": SubscriptionsView()
+        case "wishes": WishlistView()
+        case "question": DailyQuestionView()
+        case "gratitude": GratitudeView()
+        case "packs": PackListsView()
+        case "wander": WanderView { id in path.append(id) }
+        case "tags": TagManagerView()
         default:
             let t = String(key.dropFirst(4))
             TagBrowser(selected: t.isEmpty ? nil : t)
@@ -282,7 +294,7 @@ struct HomeView: View {
             GridAction(icon: "heart.text.square.fill", title: "身体", color: Color(red: 0.95, green: 0.3, blue: 0.4)) { path.append("body") },
             GridAction(icon: "film.fill", title: "影视", color: Color(red: 0.4, green: 0.35, blue: 0.85)) { path.append("movies") },
             GridAction(icon: "character.book.closed.fill", title: "生词本", color: Color(red: 0.2, green: 0.6, blue: 0.55)) { path.append("vocab") },
-            GridAction(icon: "trophy.fill", title: "成就", color: Color(red: 0.95, green: 0.65, blue: 0.1)) { path.append("achievements") }
+            GridAction(icon: "square.grid.3x3.fill", title: "百宝箱", color: Color(red: 0.95, green: 0.65, blue: 0.1)) { path.append("toolbox") }
         ]
     }
 
@@ -321,7 +333,17 @@ struct HomeView: View {
             PaletteAction(title: "生词本", symbol: "character.book.closed", keywords: "vocab dictionary cidian") { path.append("vocab") },
             PaletteAction(title: "成就与年度报告", symbol: "trophy", keywords: "achievement year report") { path.append("achievements") },
             PaletteAction(title: "导入 Markdown / Anki", symbol: "square.and.arrow.down", keywords: "import daoru") { path.append("import") },
-            PaletteAction(title: "6.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "百宝箱", symbol: "square.grid.3x3", keywords: "toolbox baibaoxiang") { path.append("toolbox") },
+            PaletteAction(title: "目标", symbol: "target", keywords: "goal mubiao") { path.append("goals") },
+            PaletteAction(title: "人脉", symbol: "person.2", keywords: "people renmai birthday") { path.append("people") },
+            PaletteAction(title: "订阅管理", symbol: "creditcard", keywords: "subscription dingyue") { path.append("subs") },
+            PaletteAction(title: "心愿单", symbol: "gift", keywords: "wish xinyuan") { path.append("wishes") },
+            PaletteAction(title: "每日一问", symbol: "questionmark.bubble", keywords: "question meiriyiwen") { path.append("question") },
+            PaletteAction(title: "感恩日记", symbol: "heart", keywords: "gratitude ganen") { path.append("gratitude") },
+            PaletteAction(title: "打包清单", symbol: "suitcase", keywords: "packing dabao") { path.append("packs") },
+            PaletteAction(title: "随机漫步", symbol: "shuffle", keywords: "random wander suiji") { path.append("wander") },
+            PaletteAction(title: "标签管理", symbol: "number.square", keywords: "tags biaoqian") { path.append("tags") },
+            PaletteAction(title: "7.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 

@@ -315,6 +315,11 @@ struct SettingsView: View {
                         Label("完整备份与自动备份", systemImage: "externaldrive.badge.checkmark")
                     }
                     NavigationLink {
+                        TagManagerView()
+                    } label: {
+                        Label("标签管理", systemImage: "number.square")
+                    }
+                    NavigationLink {
                         ImportCenterView()
                     } label: {
                         Label("导入 Markdown / Anki 卡组", systemImage: "square.and.arrow.down")
@@ -346,7 +351,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "6.0")
+                    LabeledContent("版本", value: "7.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }
