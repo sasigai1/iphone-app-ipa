@@ -174,7 +174,7 @@ final class LifeStore: ObservableObject {
 
 struct DailyView: View {
     @ObservedObject private var life = LifeStore.shared
-    @State private var tab = 0
+    @AppStorage("dailyTab") private var tab = 0
     @State private var editingHabit: Habit?
     @State private var editingCountdown: Countdown?
 
@@ -183,11 +183,18 @@ struct DailyView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     Picker("", selection: $tab) {
-                        Text("习惯打卡").tag(0)
-                        Text("倒数日").tag(1)
+                        Text("习惯").tag(0)
+                        Text("规划").tag(1)
+                        Text("心情").tag(2)
+                        Text("倒数日").tag(3)
                     }
                     .pickerStyle(.segmented)
-                    if tab == 0 { habitList } else { countdownGrid }
+                    switch tab {
+                    case 1: DayPlannerView()
+                    case 2: MoodCalendar()
+                    case 3: countdownGrid
+                    default: habitList
+                    }
                 }
                 .padding()
             }
@@ -195,10 +202,12 @@ struct DailyView: View {
             .navigationTitle("日常")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        if tab == 0 { editingHabit = Habit() } else { editingCountdown = Countdown() }
-                    } label: {
-                        Image(systemName: "plus.circle.fill").font(.title3)
+                    if tab == 0 || tab == 3 {
+                        Button {
+                            if tab == 0 { editingHabit = Habit() } else { editingCountdown = Countdown() }
+                        } label: {
+                            Image(systemName: "plus.circle.fill").font(.title3)
+                        }
                     }
                 }
             }
@@ -836,6 +845,7 @@ struct TodayPanel: View {
         let habits = life.activeHabits
         let pinned = life.sortedCountdowns.first
         VStack(alignment: .leading, spacing: 12) {
+            MoodRow()
             if !habits.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {

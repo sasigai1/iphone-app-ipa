@@ -52,6 +52,7 @@ struct PageEditor: View {
     @State private var showScanner = false
     @State private var showOCRPhoto = false
     @State private var showReading = false
+    @State private var showOrganizer = false
     @AppStorage("paper") private var paper = 0
     @AppStorage("fontDesign") private var fontDesign = 0
 
@@ -105,6 +106,9 @@ struct PageEditor: View {
         ))
         .modifier(PageExtras(page: $page, sheet: $extraSheet, presenting: $presenting, shareURL: $exportItem))
         .modifier(OCRTools(page: $page, showScanner: $showScanner, showPhoto: $showOCRPhoto))
+        .sheet(isPresented: $showOrganizer) {
+            BlockOrganizer(blocks: $page.blocks)
+        }
         .fullScreenCover(isPresented: $showReading) {
             ReadingView(page: page)
         }
@@ -466,6 +470,9 @@ struct PageEditor: View {
                 if page.kind == .document {
                     Button { showOutline = true } label: { Label("大纲", systemImage: "list.bullet.indent") }
                     Button { focused = nil; showReading = true } label: { Label("阅读视图", systemImage: "book") }
+                    if page.kind != .database && !page.locked {
+                        Button { focused = nil; showOrganizer = true } label: { Label("整理块（排序 / 批量）", systemImage: "arrow.up.arrow.down") }
+                    }
                     Button { focused = nil; presenting = true } label: { Label("演示模式", systemImage: "play.rectangle") }
                     Menu {
                         if VNDocumentCameraViewController.isSupported {

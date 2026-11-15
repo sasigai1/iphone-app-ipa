@@ -304,6 +304,11 @@ struct SettingsView: View {
                 }
 
                 Section("数据") {
+                    NavigationLink {
+                        FullBackupView()
+                    } label: {
+                        Label("完整备份与自动备份", systemImage: "externaldrive.badge.checkmark")
+                    }
                     Button {
                         if let u = store.markdownFile() { shareItem = ShareItem(url: u) }
                     } label: {
@@ -328,7 +333,7 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "4.0")
+                    LabeledContent("版本", value: "5.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }

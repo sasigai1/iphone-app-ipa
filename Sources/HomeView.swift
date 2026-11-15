@@ -148,7 +148,7 @@ struct HomeView: View {
                 destination(key)
             }
             .sheet(isPresented: $showFocus) { FocusTimerView() }
-            .sheet(isPresented: $showWhatsNew) { WhatsNew4View() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNew5View() }
             .sheet(isPresented: $showCapture) {
                 QuickCaptureView { id in path.append(id) }
             }
@@ -157,8 +157,9 @@ struct HomeView: View {
             }
             .onAppear {
                 WordGoal.ensureBaseline(store.totalWords)
-                if seenVersion != "4.0" {
-                    seenVersion = "4.0"
+                FullBackup.autoBackupIfNeeded()
+                if seenVersion != "5.0" {
+                    seenVersion = "5.0"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showWhatsNew = true }
                 }
             }
@@ -221,7 +222,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("4.0 新功能", systemImage: "sparkles")
+                            Label("5.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -249,6 +250,8 @@ struct HomeView: View {
         case "graph": GraphView { id in path.append(id) }
         case "cards": FlashcardHub { id in path.append(id) }
         case "stats": StatsDashboard()
+        case "ledger": LedgerView()
+        case "books": BookshelfView { id in path.append(id) }
         default:
             let t = String(key.dropFirst(4))
             TagBrowser(selected: t.isEmpty ? nil : t)
@@ -264,8 +267,17 @@ struct HomeView: View {
             GridAction(icon: "rectangle.stack.fill", title: "闪卡", color: .purple, badge: cards.dueCount(store.active)) { path.append("cards") },
             GridAction(icon: "point.3.connected.trianglepath.dotted", title: "图谱", color: .indigo) { path.append("graph") },
             GridAction(icon: "timer", title: "专注", color: .red) { showFocus = true },
-            GridAction(icon: "chart.bar.fill", title: "看板", color: .green) { path.append("stats") }
+            GridAction(icon: "chart.bar.fill", title: "看板", color: .green) { path.append("stats") },
+            GridAction(icon: "calendar.day.timeline.left", title: "规划", color: .cyan) { openDaily(1) },
+            GridAction(icon: "yensign.circle.fill", title: "记账", color: Color(red: 0.95, green: 0.38, blue: 0.42)) { path.append("ledger") },
+            GridAction(icon: "books.vertical.fill", title: "书架", color: .brown) { path.append("books") },
+            GridAction(icon: "face.smiling.inverse", title: "心情", color: .mint) { openDaily(2) }
         ]
+    }
+
+    private func openDaily(_ seg: Int) {
+        UserDefaults.standard.set(seg, forKey: "dailyTab")
+        NotificationCenter.default.post(name: .moyeSwitchTab, object: 4)
     }
 
     private var paletteActions: [PaletteAction] {
@@ -287,7 +299,11 @@ struct HomeView: View {
             PaletteAction(title: "废纸篓", symbol: "trash", keywords: "trash") { showTrash = true },
             PaletteAction(title: "习惯打卡", symbol: "checkmark.seal", keywords: "habit daka xiguan") { NotificationCenter.default.post(name: .moyeSwitchTab, object: 4) },
             PaletteAction(title: "倒数日", symbol: "calendar.badge.clock", keywords: "countdown daoshuri") { NotificationCenter.default.post(name: .moyeSwitchTab, object: 4) },
-            PaletteAction(title: "4.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "每日规划", symbol: "calendar.day.timeline.left", keywords: "plan guihua") { openDaily(1) },
+            PaletteAction(title: "记账", symbol: "yensign.circle", keywords: "ledger jizhang money") { path.append("ledger") },
+            PaletteAction(title: "书架", symbol: "books.vertical", keywords: "books shujia read") { path.append("books") },
+            PaletteAction(title: "心情日历", symbol: "face.smiling", keywords: "mood xinqing") { openDaily(2) },
+            PaletteAction(title: "5.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 
