@@ -150,13 +150,12 @@ struct HomeView: View {
             .listStyle(.insetGrouped)
             .ambient()
             .overlay(alignment: .bottomTrailing) {
-                GlassFAB(symbol: "plus") { path.append(store.create()) }
-                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                        showCapture = true
-                    })
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 18)
+                GlassFAB(symbol: "plus", onLongPress: { showCapture = true }) {
+                    let id = store.create()
+                    DispatchQueue.main.async { path.append(id) }
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 18)
             }
             .navigationTitle("墨页")
             .navigationDestination(for: UUID.self) { id in

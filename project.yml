@@ -21,7 +21,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sasigai1.moye
         PRODUCT_NAME: Moye
         MARKETING_VERSION: "9.0"
-        CURRENT_PROJECT_VERSION: "12"
+        CURRENT_PROJECT_VERSION: "13"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: MoyeInfo.plist
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "连接你局域网里的 Emby 服务器"

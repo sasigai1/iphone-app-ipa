@@ -175,19 +175,38 @@ struct GlassIcon: View {
 /// Floating circular glass action button.
 struct GlassFAB: View {
     let symbol: String
+    var onLongPress: (() -> Void)? = nil
     let action: () -> Void
+    @GestureState private var pressed = false
+
+    init(symbol: String, onLongPress: (() -> Void)? = nil, action: @escaping () -> Void) {
+        self.symbol = symbol
+        self.onLongPress = onLongPress
+        self.action = action
+    }
+
     var body: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
-                .glassSurface(Circle(), tint: .accentColor, interactive: true)
-        }
-        .buttonStyle(PressableStyle())
+        // Not a Button: a Button with a simultaneous long-press swallowed taps on iOS 26.
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 60, height: 60)
+            .background(Circle().fill(Color.accentColor.opacity(0.85)))
+            .glassSurface(Circle(), tint: .accentColor, interactive: false)
+            .contentShape(Circle())
+            .scaleEffect(pressed ? 0.92 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressed)
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                action()
+            }
+            .onLongPressGesture(minimumDuration: 0.45) {
+                guard let lp = onLongPress else { return }
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                lp()
+            }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("新建页面")
     }
 }
 
