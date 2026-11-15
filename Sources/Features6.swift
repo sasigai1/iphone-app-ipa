@@ -1052,7 +1052,13 @@ enum HTMLExporter {
             case .image:
                 if let d = NoteStore.loadData(b.imageFile) { body += "<img src=\"data:image/jpeg;base64,\(d.base64EncodedString())\">\n" }
             case .table:
-                body += "<table>\n" + b.table.map { "<tr>" + $0.map { "<td>\(esc($0))</td>" }.joined() + "</tr>" }.joined(separator: "\n") + "\n</table>\n"
+                var rows: [String] = []
+                for row in b.table {
+                    var cells = ""
+                    for c in row { cells += "<td>" + esc(c) + "</td>" }
+                    rows.append("<tr>" + cells + "</tr>")
+                }
+                body += "<table>\n" + rows.joined(separator: "\n") + "\n</table>\n"
             default:
                 if !t.isEmpty { body += "<p>\(t.replacingOccurrences(of: "\n", with: "<br>"))</p>\n" }
             }
