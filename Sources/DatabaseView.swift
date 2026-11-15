@@ -13,12 +13,17 @@ struct DatabaseView: View {
             controls
             if mode == 0 {
                 listView
-            } else {
+            } else if mode == 1 {
                 boardView
+            } else {
+                CalendarMonthView(rows: visibleRows) { r in editing = r }
             }
         }
         .sheet(item: $editing) { r in
-            RowEditor(row: rowBinding(r), onDelete: {
+            RowEditor(row: rowBinding(r), pageTitle: page.displayTitle, onDelete: {
+                var gone = r
+                gone.remind = false
+                Notifier.sync(row: gone, pageTitle: page.displayTitle)
                 page.rows.removeAll { $0.id == r.id }
                 editing = nil
             })
@@ -70,9 +75,10 @@ struct DatabaseView: View {
             Picker("视图", selection: $mode) {
                 Label("列表", systemImage: "list.bullet").tag(0)
                 Label("看板", systemImage: "rectangle.split.3x1").tag(1)
+                Label("日历", systemImage: "calendar").tag(2)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 170)
+            .frame(maxWidth: 200)
 
             Menu {
                 Button {
@@ -208,12 +214,14 @@ struct DatabaseView: View {
     private func cycle(_ id: UUID) {
         guard let i = page.rows.firstIndex(where: { $0.id == id }) else { return }
         withAnimation { page.rows[i].status = page.rows[i].status.next }
+        Notifier.sync(row: page.rows[i], pageTitle: page.displayTitle)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     private func setStatus(_ id: UUID, _ s: TaskStatus) {
         guard let i = page.rows.firstIndex(where: { $0.id == id }) else { return }
         withAnimation { page.rows[i].status = s }
+        Notifier.sync(row: page.rows[i], pageTitle: page.displayTitle)
     }
 
     private func rowBinding(_ r: DBRow) -> Binding<DBRow> {
@@ -255,7 +263,7 @@ struct RowCard: View {
                     }
                     Chip(text: "优先级 " + row.priority.title, color: priorityColor)
                     if let d = row.due {
-                        Chip(text: d.shortDate, color: isOverdue(d) ? .red : .gray)
+                        Chip(text: (row.remind ? "⏰ " : "") + d.shortDate, color: isOverdue(d) ? .red : .gray)
                     }
                 }
             }
@@ -296,6 +304,7 @@ struct Chip: View {
 struct RowEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var row: DBRow
+    let pageTitle: String
     let onDelete: () -> Void
 
     var body: some View {
@@ -325,6 +334,9 @@ struct RowEditor: View {
                             get: { row.due ?? Date() },
                             set: { row.due = $0 }
                         ), displayedComponents: .date)
+                        Toggle(isOn: $row.remind) {
+                            Label("到期当天 9:00 提醒", systemImage: "bell.badge")
+                        }
                     }
                     TextField("标签（如 工作、学习）", text: $row.tag)
                 }
@@ -347,5 +359,8 @@ struct RowEditor: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .onDisappear {
+            Notifier.sync(row: row, pageTitle: pageTitle)
+        }
     }
 }

@@ -36,6 +36,20 @@ enum Templates {
         return r
     }
 
+    static func journal() -> Page {
+        var callout = b(.callout, "今天的心情：😊  天气：☀️")
+        callout.emoji = "🌈"
+        return page(Date().journalTitle, "🌤️", cover: 3, [
+            callout,
+            b(.h2, "今天发生了什么"),
+            b(.text, ""),
+            b(.h2, "感恩的三件事"),
+            b(.numbered, ""), b(.numbered, ""), b(.numbered, ""),
+            b(.h2, "明天想做"),
+            b(.todo, "")
+        ])
+    }
+
     static var all: [PageTemplate] {
         [
             PageTemplate(name: "空白页面", icon: "📄", desc: "从零开始自由书写") {
@@ -44,16 +58,32 @@ enum Templates {
                 return p
             },
             PageTemplate(name: "每日日记", icon: "🌤️", desc: "心情、感恩与今日回顾") {
-                var callout = b(.callout, "今天的心情：😊  天气：☀️")
-                callout.emoji = "🌈"
-                return page(Date().fullDate.components(separatedBy: " ").first ?? "日记", "🌤️", cover: 3, [
-                    callout,
-                    b(.h2, "今天发生了什么"),
+                journal()
+            },
+            PageTemplate(name: "周计划", icon: "🗓️", desc: "本周目标与每日安排") {
+                page("周计划", "🗓️", cover: 5, [
+                    b(.callout, "本周最重要的一件事："),
+                    b(.h2, "本周目标"),
+                    b(.todo, ""), b(.todo, ""),
+                    b(.h2, "每日安排"),
+                    b(.toggle, "周一"), b(.toggle, "周二"), b(.toggle, "周三"), b(.toggle, "周四"), b(.toggle, "周五"), b(.toggle, "周末"),
+                    b(.h2, "复盘"),
+                    b(.text, "")
+                ])
+            },
+            PageTemplate(name: "项目文档", icon: "🚀", desc: "背景、目标、里程碑与表格") {
+                var t = b(.table)
+                t.table = [["里程碑", "负责人", "日期"], ["", "", ""], ["", "", ""]]
+                return page("项目文档", "🚀", cover: 1, [
+                    b(.toc),
+                    b(.h1, "背景"),
                     b(.text, ""),
-                    b(.h2, "感恩的三件事"),
-                    b(.numbered, ""), b(.numbered, ""), b(.numbered, ""),
-                    b(.h2, "明天想做"),
-                    b(.todo, "")
+                    b(.h1, "目标"),
+                    b(.bullet, ""),
+                    b(.h1, "里程碑"),
+                    t,
+                    b(.h1, "参考资料"),
+                    b(.bookmark)
                 ])
             },
             PageTemplate(name: "会议记录", icon: "🗣️", desc: "议程、讨论与行动项") {

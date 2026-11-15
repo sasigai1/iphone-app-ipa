@@ -5,6 +5,8 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var showTemplates = false
     @State private var showTrash = false
+    @AppStorage("pageSort") private var pageSort = 0
+    @AppStorage("showHeatmap") private var showHeatmap = true
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -19,6 +21,14 @@ struct HomeView: View {
                     quickActions
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                }
+
+                if showHeatmap {
+                    Section {
+                        WritingHeatmap(weeks: 17)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
                 }
 
                 if !store.recents.isEmpty {
@@ -49,7 +59,7 @@ struct HomeView: View {
                     }
                 }
 
-                Section("我的页面") {
+                Section {
                     ForEach(store.children(of: nil)) { p in
                         PageTreeRow(page: p, depth: 0, path: $path)
                     }
@@ -59,6 +69,21 @@ struct HomeView: View {
                     } label: {
                         Label("新建页面", systemImage: "plus")
                             .foregroundColor(.secondary)
+                    }
+                } header: {
+                    HStack {
+                        Text("我的页面")
+                        Spacer()
+                        Menu {
+                            Picker("排序", selection: $pageSort) {
+                                Text("按创建时间").tag(0)
+                                Text("按最近编辑").tag(1)
+                                Text("按名称").tag(2)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.caption)
+                        }
                     }
                 }
 
@@ -100,6 +125,11 @@ struct HomeView: View {
                             showTemplates = true
                         } label: {
                             Label("从模板新建", systemImage: "square.grid.2x2")
+                        }
+                        Button {
+                            path.append(store.todayJournal())
+                        } label: {
+                            Label("今日日记", systemImage: "sun.max")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -154,7 +184,10 @@ struct HomeView: View {
             QuickButton(icon: "tablecells", title: "数据库", color: .purple) {
                 path.append(store.create(title: "", kind: .database))
             }
-            QuickButton(icon: "sparkles", title: "模板", color: .orange) {
+            QuickButton(icon: "sun.max", title: "今日日记", color: .orange) {
+                path.append(store.todayJournal())
+            }
+            QuickButton(icon: "sparkles", title: "模板", color: .pink) {
                 showTemplates = true
             }
         }

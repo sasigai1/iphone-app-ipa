@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SearchView: View {
     @EnvironmentObject var store: NoteStore
@@ -168,6 +169,11 @@ struct SettingsView: View {
     @AppStorage("fontSize") private var fontSize: Double = 17
     @AppStorage("lockEnabled") private var lockEnabled = false
     @State private var confirmReset = false
+    @AppStorage("pageSort") private var pageSort = 0
+    @AppStorage("showHeatmap") private var showHeatmap = true
+    @State private var shareItem: ShareItem?
+    @State private var showImporter = false
+    @State private var importMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -234,6 +240,20 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("主页") {
+                    Toggle(isOn: $showHeatmap) {
+                        Label("显示写作热力图", systemImage: "flame")
+                    }
+                    Picker(selection: $pageSort) {
+                        Text("按创建时间").tag(0)
+                        Text("按最近编辑").tag(1)
+                        Text("按名称").tag(2)
+                    } label: {
+                        Label("页面排序", systemImage: "arrow.up.arrow.down")
+                    }
+                    LabeledContent("连续写作", value: "\(store.streak) 天")
+                }
+
                 Section("隐私") {
                     Toggle(isOn: $lockEnabled) {
                         Label("面容 ID / 密码锁", systemImage: "faceid")
@@ -241,8 +261,20 @@ struct SettingsView: View {
                 }
 
                 Section("数据") {
-                    ShareLink(item: store.exportAllMarkdown()) {
-                        Label("导出全部为 Markdown", systemImage: "square.and.arrow.up")
+                    Button {
+                        if let u = store.markdownFile() { shareItem = ShareItem(url: u) }
+                    } label: {
+                        Label("导出全部为 Markdown 文件", systemImage: "doc.text")
+                    }
+                    Button {
+                        if let u = store.backupFile() { shareItem = ShareItem(url: u) }
+                    } label: {
+                        Label("备份全部数据（JSON）", systemImage: "externaldrive.badge.icloud")
+                    }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("从备份恢复", systemImage: "arrow.down.doc")
                     }
                     Button(role: .destructive) {
                         confirmReset = true
@@ -253,13 +285,30 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "1.0")
+                    LabeledContent("版本", value: "1.1")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
             }
             .navigationTitle("设置")
             .confirmationDialog("彻底删除废纸篓里的页面？", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("删除", role: .destructive) { store.emptyTrash() }
+            }
+            .sheet(item: $shareItem) { item in
+                ActivityView(items: [item.url])
+            }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url):
+                    let n = store.importBackup(from: url)
+                    importMessage = n < 0 ? "无法读取这个备份文件" : "已恢复 \(n) 个页面（已存在的页面会跳过）"
+                case .failure:
+                    importMessage = "没有选择文件"
+                }
+            }
+            .alert("恢复备份", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+                Button("好") { importMessage = nil }
+            } message: {
+                Text(importMessage ?? "")
             }
         }
     }

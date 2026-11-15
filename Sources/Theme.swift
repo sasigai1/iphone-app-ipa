@@ -38,6 +38,24 @@ enum Theme {
         "🐱", "🐶", "🦊", "🐼", "🧩", "🛠️", "💻", "📱", "🔒", "🌈"
     ]
 
+    static let blockColors: [(String, Color)] = [
+        ("默认", Color.clear),
+        ("灰色", Color.gray),
+        ("棕色", Color.brown),
+        ("橙色", Color.orange),
+        ("黄色", Color.yellow),
+        ("绿色", Color.green),
+        ("蓝色", Color.blue),
+        ("紫色", Color.purple),
+        ("粉色", Color.pink),
+        ("红色", Color.red)
+    ]
+
+    static func blockColor(_ i: Int) -> Color {
+        guard i > 0, i < blockColors.count else { return Color.clear }
+        return blockColors[i].1
+    }
+
     static let calloutEmojis: [String] = ["💡", "⚠️", "📌", "✅", "❗️", "🔥", "📣", "🧠"]
 }
 

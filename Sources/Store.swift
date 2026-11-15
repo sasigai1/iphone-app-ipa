@@ -4,13 +4,16 @@ import UIKit
 
 final class NoteStore: ObservableObject {
     @Published var pages: [Page] = []
+    @Published var activity: [String: Int] = [:]
 
     private var cancellable: AnyCancellable?
     private let fileURL: URL
+    private let activityURL: URL
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         fileURL = docs.appendingPathComponent("moye_store_v1.json")
+        activityURL = docs.appendingPathComponent("moye_activity.json")
         load()
         cancellable = $pages
             .dropFirst()
@@ -28,6 +31,10 @@ final class NoteStore: ObservableObject {
             pages = Templates.seed()
             save()
         }
+        if let data = try? Data(contentsOf: activityURL),
+           let a = try? JSONDecoder().decode([String: Int].self, from: data) {
+            activity = a
+        }
     }
 
     func save() {
@@ -35,6 +42,53 @@ final class NoteStore: ObservableObject {
         if let data = try? enc.encode(pages) {
             try? data.write(to: fileURL, options: .atomic)
         }
+        if let data = try? enc.encode(activity) {
+            try? data.write(to: activityURL, options: .atomic)
+        }
+    }
+
+    // MARK: Backup
+
+    func backupFile() -> URL? {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted]
+        enc.dateEncodingStrategy = .iso8601
+        guard let data = try? enc.encode(pages) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("墨页备份-\(Date().dayKey).json")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    func markdownFile() -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("墨页导出-\(Date().dayKey).md")
+        do {
+            try exportAllMarkdown().data(using: .utf8)?.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// Returns number of pages imported.
+    func importBackup(from url: URL) -> Int {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return -1 }
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .iso8601
+        var imported: [Page]? = try? dec.decode([Page].self, from: data)
+        if imported == nil {
+            imported = try? JSONDecoder().decode([Page].self, from: data)
+        }
+        guard let list = imported else { return -1 }
+        let existing = Set(pages.map { $0.id })
+        let fresh = list.filter { !existing.contains($0.id) }
+        pages.append(contentsOf: fresh)
+        return fresh.count
     }
 
     static var imagesDir: URL {
@@ -89,7 +143,34 @@ final class NoteStore: ObservableObject {
     }
 
     func children(of id: UUID?) -> [Page] {
-        active.filter { $0.parentID == id }.sorted { $0.created < $1.created }
+        let list = active.filter { $0.parentID == id }
+        switch UserDefaults.standard.integer(forKey: "pageSort") {
+        case 1: return list.sorted { $0.updated > $1.updated }
+        case 2: return list.sorted { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
+        default: return list.sorted { $0.created < $1.created }
+        }
+    }
+
+    var streak: Int {
+        var n = 0
+        var day = Date()
+        if (activity[day.dayKey] ?? 0) == 0 {
+            day = Calendar.current.date(byAdding: .day, value: -1, to: day) ?? day
+        }
+        while (activity[day.dayKey] ?? 0) > 0 {
+            n += 1
+            day = Calendar.current.date(byAdding: .day, value: -1, to: day) ?? day
+        }
+        return n
+    }
+
+    @discardableResult
+    func todayJournal() -> UUID {
+        let title = Date().journalTitle
+        if let p = active.first(where: { $0.title == title }) { return p.id }
+        var p = Templates.journal()
+        p.title = title
+        return add(p)
     }
 
     func page(_ id: UUID) -> Page? {
@@ -125,6 +206,8 @@ final class NoteStore: ObservableObject {
             var n = p
             n.updated = Date()
             pages[i] = n
+            let k = Date().dayKey
+            activity[k, default: 0] += 1
         }
     }
 

@@ -19,15 +19,27 @@ struct BlockRow: View {
     let onSlash: () -> Void
     let onPickImage: () -> Void
     let onAction: (BlockAction) -> Void
+    var readOnly: Bool = false
+    var headings: [Block] = []
+    var onJump: (UUID) -> Void = { _ in }
+
+    @Environment(\.openURL) private var openURL
 
     private var isFocused: Bool { focus.wrappedValue == block.id }
 
     var body: some View {
         content
             .padding(.vertical, verticalPadding)
+            .padding(.horizontal, block.color > 0 ? 8 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.blockColor(block.color).opacity(0.16))
+            )
             .contentShape(Rectangle())
-            .contextMenu { menu }
+            .contextMenu {
+                if !readOnly { menu }
+            }
             .onChange(of: block.text) { newValue in
                 handleTextChange(newValue)
             }
@@ -95,6 +107,12 @@ struct BlockRow: View {
             imageView
         case .page:
             pageLinkView
+        case .table:
+            tableView
+        case .bookmark:
+            bookmarkView
+        case .toc:
+            tocView
         }
     }
 
@@ -103,6 +121,7 @@ struct BlockRow: View {
             .font(font)
             .focused(focus, equals: block.id)
             .lineSpacing(3)
+            .disabled(readOnly)
     }
 
     private var todoView: some View {
@@ -121,6 +140,7 @@ struct BlockRow: View {
                 .focused(focus, equals: block.id)
                 .strikethrough(block.checked)
                 .foregroundColor(block.checked ? .secondary : .primary)
+                .disabled(readOnly)
         }
     }
 
@@ -188,6 +208,7 @@ struct BlockRow: View {
                 .focused(focus, equals: block.id)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.never)
+                .disabled(readOnly)
         }
         .padding(12)
         .background(
@@ -258,6 +279,168 @@ struct BlockRow: View {
         }
     }
 
+    // MARK: Table / bookmark / toc
+
+    private var tableView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(0..<block.table.count, id: \.self) { r in
+                        HStack(spacing: 0) {
+                            ForEach(0..<block.table[r].count, id: \.self) { c in
+                                TextField(r == 0 ? "标题" : "", text: cellBinding(r, c), axis: .vertical)
+                                    .font(.system(size: fontSize - 2, weight: r == 0 ? .semibold : .regular))
+                                    .padding(8)
+                                    .frame(width: 120, alignment: .topLeading)
+                                    .frame(minHeight: 38, alignment: .topLeading)
+                                    .background(r == 0 ? Color(.tertiarySystemFill) : Color.clear)
+                                    .overlay(Rectangle().stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+                                    .disabled(readOnly)
+                            }
+                        }
+                    }
+                }
+            }
+            if !readOnly {
+                HStack(spacing: 14) {
+                    Button { tableAddRow() } label: { Label("行", systemImage: "plus") }
+                    Button { tableAddCol() } label: { Label("列", systemImage: "plus") }
+                    Button { tableRemoveRow() } label: { Label("行", systemImage: "minus") }
+                        .disabled(block.table.count <= 1)
+                    Button { tableRemoveCol() } label: { Label("列", systemImage: "minus") }
+                        .disabled((block.table.first?.count ?? 0) <= 1)
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+                .foregroundColor(.secondary)
+            }
+        }
+        .onAppear {
+            if block.table.isEmpty {
+                block.table = [["", "", ""], ["", "", ""], ["", "", ""]]
+            }
+        }
+    }
+
+    private func cellBinding(_ r: Int, _ c: Int) -> Binding<String> {
+        let b = $block
+        return Binding(
+            get: {
+                let t = b.wrappedValue.table
+                guard r < t.count, c < t[r].count else { return "" }
+                return t[r][c]
+            },
+            set: { v in
+                guard r < b.wrappedValue.table.count, c < b.wrappedValue.table[r].count else { return }
+                b.wrappedValue.table[r][c] = v.replacingOccurrences(of: "\n", with: " ")
+            }
+        )
+    }
+
+    private func tableAddRow() {
+        let cols = block.table.first?.count ?? 3
+        block.table.append(Array(repeating: "", count: cols))
+    }
+
+    private func tableAddCol() {
+        for i in block.table.indices { block.table[i].append("") }
+    }
+
+    private func tableRemoveRow() {
+        if block.table.count > 1 { block.table.removeLast() }
+    }
+
+    private func tableRemoveCol() {
+        for i in block.table.indices where block.table[i].count > 1 { block.table[i].removeLast() }
+    }
+
+    @ViewBuilder
+    private var bookmarkView: some View {
+        let trimmed = block.url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || isFocused {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .foregroundColor(.secondary)
+                TextField("粘贴网址，如 https://www.notion.so", text: $block.url)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .focused(focus, equals: block.id)
+                    .disabled(readOnly)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12))
+            )
+        } else {
+            Button {
+                if let u = normalizedURL(trimmed) { openURL(u) }
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(block.text.isEmpty ? (normalizedURL(trimmed)?.host ?? trimmed) : block.text)
+                            .font(.system(size: fontSize - 1, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text(trimmed)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.title3)
+                        .foregroundColor(.accentColor)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func normalizedURL(_ s: String) -> URL? {
+        if s.lowercased().hasPrefix("http://") || s.lowercased().hasPrefix("https://") {
+            return URL(string: s)
+        }
+        return URL(string: "https://" + s)
+    }
+
+    private var tocView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("目录")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            if headings.isEmpty {
+                Text("添加标题后，这里会自动生成目录")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            ForEach(headings) { h in
+                Button {
+                    onJump(h.id)
+                } label: {
+                    Text(h.text)
+                        .font(.system(size: fontSize - 1))
+                        .underline(color: Color.secondary.opacity(0.3))
+                        .foregroundColor(.primary)
+                        .padding(.leading, h.type == .h1 ? 0 : (h.type == .h2 ? 14 : 28))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.tertiarySystemFill).opacity(0.5))
+        )
+    }
+
     // MARK: Menu
 
     @ViewBuilder
@@ -272,6 +455,17 @@ struct BlockRow: View {
             }
         } label: {
             Label("转换为", systemImage: "arrow.triangle.2.circlepath")
+        }
+        Menu {
+            ForEach(0..<Theme.blockColors.count, id: \.self) { i in
+                Button {
+                    block.color = i
+                } label: {
+                    Label(Theme.blockColors[i].0, systemImage: block.color == i ? "checkmark.circle.fill" : "circle.fill")
+                }
+            }
+        } label: {
+            Label("背景颜色", systemImage: "paintpalette")
         }
         Button { onAction(.insertBelow) } label: { Label("在下方插入", systemImage: "plus") }
         Button { onAction(.moveUp) } label: { Label("上移", systemImage: "arrow.up") }

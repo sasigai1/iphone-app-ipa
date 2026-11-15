@@ -38,8 +38,55 @@ struct PageEditor: View {
     @State private var imageTarget: UUID?
     @State private var showInfo = false
     @State private var showMove = false
+    @State private var showOutline = false
+    @State private var jumpTarget: UUID?
 
     var body: some View {
+        ScrollViewReader { proxy in
+            editorScroll
+                .onChange(of: jumpTarget) { t in
+                    guard let t = t else { return }
+                    withAnimation(.easeInOut) { proxy.scrollTo(t, anchor: .top) }
+                    jumpTarget = nil
+                }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { topToolbar }
+        .toolbar { keyboardToolbar }
+        .sheet(isPresented: $showOutline) {
+            OutlineSheet(headings: page.headings) { id in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { jumpTarget = id }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .modifier(EditorSheets(
+            page: $page,
+            pageID: pageID,
+            showSlash: $showSlash,
+            showIconPicker: $showIconPicker,
+            showCoverPicker: $showCoverPicker,
+            showInfo: $showInfo,
+            showMove: $showMove,
+            showPhoto: $showPhoto,
+            photoItem: $photoItem,
+            onSlashPick: { type in applyType(type, to: slashTarget) },
+            onPhotoData: { name in insertImage(name) }
+        ))
+    }
+
+    private func insertImage(_ name: String) {
+        if let t = imageTarget, let i = page.blocks.firstIndex(where: { $0.id == t }) {
+            page.blocks[i].type = .image
+            page.blocks[i].imageFile = name
+        } else {
+            var nb = Block()
+            nb.type = .image
+            nb.imageFile = name
+            page.blocks.append(nb)
+        }
+    }
+
+    private var editorScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 coverView
@@ -49,7 +96,7 @@ struct PageEditor: View {
                     TextField("无标题", text: $page.title, axis: .vertical)
                         .font(.system(size: 32, weight: .bold))
                         .submitLabel(.next)
-                    Text("编辑于 \(page.updated.relative) · \(page.wordCount) 字")
+                    Text("编辑于 \(page.updated.relative) · \(page.wordCount) 字 · 约 \(page.readingMinutes) 分钟读完" + (page.locked ? " · 🔒 已锁定" : ""))
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.bottom, 10)
@@ -65,52 +112,6 @@ struct PageEditor: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { topToolbar }
-        .toolbar { keyboardToolbar }
-        .sheet(isPresented: $showSlash) {
-            BlockTypePicker { type in
-                applyType(type, to: slashTarget)
-            }
-            .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showIconPicker) {
-            EmojiPicker(selection: $page.icon)
-                .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showCoverPicker) {
-            CoverPicker(selection: $page.cover)
-                .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showInfo) {
-            PageInfoView(page: page)
-                .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showMove) {
-            MovePageView(pageID: pageID)
-        }
-        .photosPicker(isPresented: $showPhoto, selection: $photoItem, matching: .images)
-        .onChange(of: photoItem) { item in
-            guard let item = item else { return }
-            let target = imageTarget
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let name = NoteStore.saveImage(data) {
-                    await MainActor.run {
-                        if let t = target, let i = page.blocks.firstIndex(where: { $0.id == t }) {
-                            page.blocks[i].type = .image
-                            page.blocks[i].imageFile = name
-                        } else {
-                            var nb = Block()
-                            nb.type = .image
-                            nb.imageFile = name
-                            page.blocks.append(nb)
-                        }
-                        photoItem = nil
-                    }
-                }
-            }
-        }
     }
 
     // MARK: Header
@@ -204,10 +205,15 @@ struct PageEditor: View {
                         imageTarget = block.id
                         showPhoto = true
                     },
-                    onAction: { action in perform(action, on: block.id) }
+                    onAction: { action in perform(action, on: block.id) },
+                    readOnly: page.locked,
+                    headings: block.type == .toc ? page.headings : [],
+                    onJump: { id in jumpTarget = id }
                 )
+                .id(block.id)
             }
 
+            if !page.locked {
             Button {
                 addBlockAtEnd()
             } label: {
@@ -222,6 +228,7 @@ struct PageEditor: View {
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
+            }
         }
     }
 
@@ -277,6 +284,14 @@ struct PageEditor: View {
             let child = store.create(parent: pageID)
             page.blocks[idx].type = .page
             page.blocks[idx].linkedPage = child
+            page.blocks[idx].text = ""
+        case .table:
+            page.blocks[idx].type = .table
+            if page.blocks[idx].table.isEmpty {
+                page.blocks[idx].table = [["", "", ""], ["", "", ""], ["", "", ""]]
+            }
+        case .toc:
+            page.blocks[idx].type = .toc
             page.blocks[idx].text = ""
         case .divider:
             page.blocks[idx].type = .divider
@@ -339,6 +354,14 @@ struct PageEditor: View {
                 Image(systemName: "square.and.arrow.up")
             }
             Menu {
+                if page.kind == .document {
+                    Button { showOutline = true } label: { Label("大纲", systemImage: "list.bullet.indent") }
+                }
+                Button {
+                    page.locked.toggle()
+                } label: {
+                    Label(page.locked ? "解锁编辑" : "锁定页面", systemImage: page.locked ? "lock.open" : "lock")
+                }
                 Button { showIconPicker = true } label: { Label("更换图标", systemImage: "face.smiling") }
                 Button { showCoverPicker = true } label: { Label(page.cover == nil ? "添加封面" : "更换封面", systemImage: "photo.on.rectangle") }
                 if page.kind == .document {
@@ -373,7 +396,7 @@ struct PageEditor: View {
     @ToolbarContentBuilder
     private var keyboardToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .keyboard) {
-            if let id = focused, let block = page.blocks.first(where: { $0.id == id }) {
+            if !page.locked, let id = focused, let block = page.blocks.first(where: { $0.id == id }) {
                 Button {
                     slashTarget = id
                     focused = nil
@@ -418,6 +441,8 @@ struct PageInfoView: View {
                 LabeledContent("标题", value: page.displayTitle)
                 LabeledContent("类型", value: page.kind == .database ? "数据库" : "文档")
                 LabeledContent("字数", value: "\(page.wordCount)")
+                LabeledContent("阅读时长", value: "约 \(page.readingMinutes) 分钟")
+                LabeledContent("标题数", value: "\(page.headings.count)")
                 LabeledContent("块数量", value: "\(page.blocks.count)")
                 if page.kind == .database {
                     LabeledContent("条目", value: "\(page.rows.count)")
@@ -469,5 +494,56 @@ struct MovePageView: View {
     private var candidates: [Page] {
         let excluded = Set([pageID] + store.descendants(of: pageID))
         return store.active.filter { !excluded.contains($0.id) && $0.kind == .document }
+    }
+}
+
+
+struct EditorSheets: ViewModifier {
+    @Binding var page: Page
+    let pageID: UUID
+    @Binding var showSlash: Bool
+    @Binding var showIconPicker: Bool
+    @Binding var showCoverPicker: Bool
+    @Binding var showInfo: Bool
+    @Binding var showMove: Bool
+    @Binding var showPhoto: Bool
+    @Binding var photoItem: PhotosPickerItem?
+    let onSlashPick: (BlockType) -> Void
+    let onPhotoData: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showSlash) {
+                BlockTypePicker(onPick: onSlashPick)
+                    .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showIconPicker) {
+                EmojiPicker(selection: $page.icon)
+                    .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showCoverPicker) {
+                CoverPicker(selection: $page.cover)
+                    .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showInfo) {
+                PageInfoView(page: page)
+                    .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showMove) {
+                MovePageView(pageID: pageID)
+            }
+            .photosPicker(isPresented: $showPhoto, selection: $photoItem, matching: .images)
+            .onChange(of: photoItem) { item in
+                guard let item = item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let name = NoteStore.saveImage(data) {
+                        await MainActor.run {
+                            onPhotoData(name)
+                            photoItem = nil
+                        }
+                    }
+                }
+            }
     }
 }

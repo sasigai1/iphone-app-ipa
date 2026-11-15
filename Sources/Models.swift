@@ -1,7 +1,7 @@
 import Foundation
 
 enum BlockType: String, Codable, CaseIterable, Identifiable {
-    case text, h1, h2, h3, bullet, numbered, todo, toggle, quote, callout, code, divider, image, page
+    case text, h1, h2, h3, bullet, numbered, todo, toggle, quote, callout, code, divider, image, page, table, bookmark, toc
 
     var id: String { rawValue }
 
@@ -21,6 +21,9 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .divider: return "分割线"
         case .image: return "图片"
         case .page: return "子页面"
+        case .table: return "表格"
+        case .bookmark: return "网页书签"
+        case .toc: return "目录"
         }
     }
 
@@ -40,6 +43,9 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .divider: return "minus"
         case .image: return "photo"
         case .page: return "doc.text"
+        case .table: return "tablecells"
+        case .bookmark: return "link"
+        case .toc: return "list.bullet.indent"
         }
     }
 
@@ -59,16 +65,21 @@ enum BlockType: String, Codable, CaseIterable, Identifiable {
         case .divider: return "分隔内容 · 输入 ---"
         case .image: return "从相册插入图片"
         case .page: return "在当前页面里嵌套新页面"
+        case .table: return "行列可增删的简单表格"
+        case .bookmark: return "保存一个网址，点击直接打开"
+        case .toc: return "自动生成本页标题目录"
         }
     }
 
     var isListLike: Bool { self == .bullet || self == .numbered || self == .todo }
-    var isTextual: Bool { self != .divider && self != .image && self != .page }
+    var isTextual: Bool { ![.divider, .image, .page, .table, .bookmark, .toc].contains(self) }
+    var isHeading: Bool { self == .h1 || self == .h2 || self == .h3 }
 
     static let groups: [(String, [BlockType])] = [
         ("基础", [.text, .h1, .h2, .h3]),
         ("列表", [.bullet, .numbered, .todo, .toggle]),
-        ("高级", [.quote, .callout, .code, .divider, .image, .page])
+        ("高级", [.quote, .callout, .code, .table, .divider, .toc]),
+        ("媒体与链接", [.image, .bookmark, .page])
     ]
 }
 
@@ -82,6 +93,27 @@ struct Block: Identifiable, Codable, Equatable {
     var emoji: String = "💡"
     var imageFile: String? = nil
     var linkedPage: UUID? = nil
+    var color: Int = 0
+    var url: String = ""
+    var table: [[String]] = []
+}
+
+extension Block {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(UUID.self, forKey: .id) { id = v }
+        if let v = try? c.decodeIfPresent(BlockType.self, forKey: .type) { type = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .text) { text = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .checked) { checked = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .expanded) { expanded = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .detail) { detail = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .emoji) { emoji = v }
+        imageFile = try c.decodeIfPresent(String.self, forKey: .imageFile)
+        linkedPage = try c.decodeIfPresent(UUID.self, forKey: .linkedPage)
+        if let v = try c.decodeIfPresent(Int.self, forKey: .color) { color = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .url) { url = v }
+        if let v = try c.decodeIfPresent([[String]].self, forKey: .table) { table = v }
+    }
 }
 
 enum TaskStatus: String, Codable, CaseIterable, Identifiable {
@@ -130,6 +162,21 @@ struct DBRow: Identifiable, Codable, Equatable {
     var due: Date? = nil
     var tag: String = ""
     var note: String = ""
+    var remind: Bool = false
+}
+
+extension DBRow {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(UUID.self, forKey: .id) { id = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .title) { title = v }
+        if let v = try c.decodeIfPresent(TaskStatus.self, forKey: .status) { status = v }
+        if let v = try c.decodeIfPresent(Priority.self, forKey: .priority) { priority = v }
+        due = try c.decodeIfPresent(Date.self, forKey: .due)
+        if let v = try c.decodeIfPresent(String.self, forKey: .tag) { tag = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .note) { note = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .remind) { remind = v }
+    }
 }
 
 enum PageKind: String, Codable {
@@ -149,6 +196,11 @@ struct Page: Identifiable, Codable, Equatable {
     var isTrashed: Bool = false
     var created: Date = Date()
     var updated: Date = Date()
+    var locked: Bool = false
+
+    var readingMinutes: Int { max(1, Int((Double(wordCount) / 400.0).rounded(.up))) }
+
+    var headings: [Block] { blocks.filter { $0.type.isHeading && !$0.text.isEmpty } }
 
     var displayTitle: String {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -208,13 +260,58 @@ struct Page: Identifiable, Codable, Equatable {
             case .image: out += "![图片](\(b.imageFile ?? ""))\n\n"
             case .page:
                 if let id = b.linkedPage { out += "📄 \(titleFor(id))\n\n" }
+            case .bookmark:
+                out += "[\(b.text.isEmpty ? b.url : b.text)](\(b.url))\n\n"
+            case .toc:
+                for h in headings { out += "- \(h.text)\n" }
+                out += "\n"
+            case .table:
+                if let first = b.table.first {
+                    out += "| " + first.joined(separator: " | ") + " |\n"
+                    out += "|" + Array(repeating: "---|", count: first.count).joined() + "\n"
+                    for r in b.table.dropFirst() { out += "| " + r.joined(separator: " | ") + " |\n" }
+                    out += "\n"
+                }
             }
         }
         return out
     }
 }
 
+extension Page {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(UUID.self, forKey: .id) { id = v }
+        parentID = try c.decodeIfPresent(UUID.self, forKey: .parentID)
+        if let v = try c.decodeIfPresent(String.self, forKey: .title) { title = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .icon) { icon = v }
+        cover = try c.decodeIfPresent(Int.self, forKey: .cover)
+        if let v = try c.decodeIfPresent(PageKind.self, forKey: .kind) { kind = v }
+        if let v = try c.decodeIfPresent([Block].self, forKey: .blocks) { blocks = v }
+        if let v = try c.decodeIfPresent([DBRow].self, forKey: .rows) { rows = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) { isFavorite = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .isTrashed) { isTrashed = v }
+        if let v = try c.decodeIfPresent(Date.self, forKey: .created) { created = v }
+        if let v = try c.decodeIfPresent(Date.self, forKey: .updated) { updated = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .locked) { locked = v }
+    }
+}
+
 extension Date {
+    var dayKey: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: self)
+    }
+
+    var journalTitle: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy年M月d日 EEEE"
+        return f.string(from: self)
+    }
+
     var relative: String {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "zh_CN")
