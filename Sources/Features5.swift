@@ -821,6 +821,7 @@ struct BookshelfView: View {
             .padding()
         }
         .ambient()
+        .modifier(BookImportHost())
         .navigationTitle("书架")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { BookImportButton() }

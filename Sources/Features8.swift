@@ -271,7 +271,9 @@ enum BookImporter {
         let name = UUID().uuidString + "." + (ext.isEmpty ? "txt" : ext)
         do { try data.write(to: EbookFiles.url(name)) } catch { return nil }
         var b = Book()
-        b.title = u.deletingPathExtension().lastPathComponent
+        var t = u.deletingPathExtension().lastPathComponent
+        if t.count > 37, t[t.index(t.startIndex, offsetBy: 36)] == "-" { t = String(t.dropFirst(37)) }
+        b.title = t
         b.status = 0
         b.color = Int.random(in: 0..<Theme.covers.count)
         b.file = name
@@ -309,40 +311,80 @@ enum BookImporter {
     }
 }
 
+extension Notification.Name {
+    static let moyeImportBooks = Notification.Name("moyeImportBooks")
+}
+
+/// Toolbar button only posts; the importer lives on the shelf body (fileImporter inside toolbar items does not present reliably).
 struct BookImportButton: View {
+    var body: some View {
+        Button { NotificationCenter.default.post(name: .moyeImportBooks, object: nil) } label: {
+            Image(systemName: "square.and.arrow.down.on.square")
+        }
+    }
+}
+
+struct BookImportHost: ViewModifier {
     @ObservedObject private var life = Life5.shared
     @State private var picking = false
     @State private var importing = false
     @State private var message: String?
 
     private var types: [UTType] {
-        var t: [UTType] = [.plainText, .text, .pdf]
-        if let e = UTType(filenameExtension: "epub") { t.append(e) }
-        t.append(UTType("org.idpf.epub-container") ?? .data)
+        var t: [UTType] = [.plainText, .text, .utf8PlainText, .pdf, .epub, .data]
+        if let e = UTType(filenameExtension: "txt") { t.append(e) }
+        if let e = UTType("org.idpf.epub-container") { t.append(e) }
         return t
     }
 
-    var body: some View {
-        Button { picking = true } label: {
-            if importing { ProgressView() } else { Image(systemName: "square.and.arrow.down.on.square") }
-        }
-        .fileImporter(isPresented: $picking, allowedContentTypes: types, allowsMultipleSelection: true) { r in
-            guard case .success(let urls) = r else { return }
-            importing = true
-            DispatchQueue.global(qos: .userInitiated).async {
-                var books: [Book] = []
-                var failed = 0
-                for u in urls { if let b = BookImporter.importFile(u) { books.append(b) } else { failed += 1 } }
-                DispatchQueue.main.async {
-                    life.data.books.append(contentsOf: books)
-                    importing = false
-                    message = "已导入 \(books.count) 本" + (failed > 0 ? "，\(failed) 个文件无法识别" : "")
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .moyeImportBooks)) { _ in picking = true }
+            .fileImporter(isPresented: $picking, allowedContentTypes: types, allowsMultipleSelection: true) { r in
+                switch r {
+                case .failure(let e): message = "无法打开文件：\(e.localizedDescription)"
+                case .success(let urls):
+                    importing = true
+                    // Copy while the security scope is open, on this thread, before handing off.
+                    var staged: [URL] = []
+                    for u in urls {
+                        let ok = u.startAccessingSecurityScopedResource()
+                        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + u.lastPathComponent)
+                        var copied = false
+                        let coord = NSFileCoordinator()
+                        var cerr: NSError?
+                        coord.coordinate(readingItemAt: u, options: .withoutChanges, error: &cerr) { src in
+                            copied = (try? FileManager.default.copyItem(at: src, to: tmp)) != nil
+                        }
+                        if !copied, let d = try? Data(contentsOf: u) { copied = (try? d.write(to: tmp)) != nil }
+                        if ok { u.stopAccessingSecurityScopedResource() }
+                        if copied { staged.append(tmp) }
+                    }
+                    let unreadable = urls.count - staged.count
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        var books: [Book] = []
+                        var failed = unreadable
+                        for u in staged {
+                            if let b = BookImporter.importFile(u) { books.append(b) } else { failed += 1 }
+                            try? FileManager.default.removeItem(at: u)
+                        }
+                        DispatchQueue.main.async {
+                            life.data.books.append(contentsOf: books)
+                            importing = false
+                            message = "已导入 \(books.count) 本" + (failed > 0 ? "，\(failed) 个文件无法识别" : "")
+                        }
+                    }
                 }
             }
-        }
-        .alert("导入书籍", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("好") { message = nil }
-        } message: { Text(message ?? "") }
+            .overlay {
+                if importing {
+                    VStack(spacing: 10) { ProgressView(); Text("正在导入…").font(.footnote) }
+                        .padding(22).glassCard(radius: 20)
+                }
+            }
+            .alert("导入书籍", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                Button("好") { message = nil }
+            } message: { Text(message ?? "") }
     }
 }
 
@@ -718,10 +760,19 @@ final class EmbyClient: ObservableObject {
     @AppStorage("embyToken") var token = ""
     @AppStorage("embyUser") var userId = ""
     @AppStorage("embyUserName") var userName = ""
-    @AppStorage("embyDevice") var deviceId = UUID().uuidString
+    @AppStorage("embyDevice") var deviceId = EmbyClient.stableDeviceId
     @Published var connected = false
 
+    static var stableDeviceId: String {
+        if let d = UserDefaults.standard.string(forKey: "embyDeviceStable") { return d }
+        let d = UUID().uuidString
+        UserDefaults.standard.set(d, forKey: "embyDeviceStable")
+        return d
+    }
+
     init() { connected = !token.isEmpty && !server.isEmpty }
+
+    var authorization: String { authHeader }
 
     private var authHeader: String {
         "MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"9.0\"" + (token.isEmpty ? "" : ", Token=\"\(token)\"")
@@ -1261,46 +1312,178 @@ struct EmbyDetailView: View {
     }
 }
 
+// MARK: Playback resolution (PlaybackInfo + iOS device profile)
+
+enum EmbyPlayback {
+    struct Source { let url: URL; let transcoding: Bool; let mediaSourceId: String; let playSessionId: String }
+
+    static var profile: [String: Any] {
+        [
+            "Name": "Moye iOS",
+            "MaxStreamingBitrate": 40_000_000,
+            "MaxStaticBitrate": 100_000_000,
+            "MusicStreamingTranscodingBitrate": 192_000,
+            "DirectPlayProfiles": [
+                ["Container": "mp4,m4v,mov", "Type": "Video", "VideoCodec": "h264,hevc,h265", "AudioCodec": "aac,mp3,ac3,eac3,alac,flac"]
+            ],
+            "TranscodingProfiles": [
+                ["Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac,mp3", "Protocol": "hls", "Context": "Streaming", "MaxAudioChannels": "6", "MinSegments": 1, "BreakOnNonKeyFrames": true]
+            ],
+            "ContainerProfiles": [],
+            "CodecProfiles": [],
+            "SubtitleProfiles": [
+                ["Format": "vtt", "Method": "Hls"],
+                ["Format": "srt", "Method": "External"]
+            ]
+        ]
+    }
+
+    static func resolve(_ id: String, startTicks: Int64) async -> Source? {
+        let c = EmbyClient.shared
+        let session = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        if let u = c.url("/Items/\(id)/PlaybackInfo", ["UserId": c.userId, "StartTimeTicks": "\(startTicks)", "IsPlayback": "true", "AutoOpenLiveStream": "true", "MaxStreamingBitrate": "40000000"]) {
+            var r = URLRequest(url: u)
+            r.httpMethod = "POST"
+            r.timeoutInterval = 20
+            r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            r.setValue(c.authorization, forHTTPHeaderField: "X-Emby-Authorization")
+            r.setValue(c.token, forHTTPHeaderField: "X-Emby-Token")
+            r.httpBody = try? JSONSerialization.data(withJSONObject: ["DeviceProfile": profile, "UserId": c.userId])
+            if let (d, _) = try? await URLSession.shared.data(for: r),
+               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+               let sources = j["MediaSources"] as? [[String: Any]], let ms = sources.first {
+                let psid = (j["PlaySessionId"] as? String) ?? session
+                let msid = (ms["Id"] as? String) ?? id
+                let container = ((ms["Container"] as? String) ?? "").lowercased()
+                let direct = (ms["SupportsDirectPlay"] as? Bool ?? false) || (ms["SupportsDirectStream"] as? Bool ?? false)
+                let okContainer = ["mp4", "m4v", "mov"].contains(where: { container.contains($0) })
+                if direct && okContainer, let u = c.url("/Videos/\(id)/stream.\(container.split(separator: ",").first.map(String.init) ?? "mp4")", ["Static": "true", "MediaSourceId": msid, "PlaySessionId": psid, "DeviceId": c.deviceId]) {
+                    return Source(url: u, transcoding: false, mediaSourceId: msid, playSessionId: psid)
+                }
+                if let t = ms["TranscodingUrl"] as? String, !t.isEmpty, let u = absolute(t) {
+                    return Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid)
+                }
+                if let u = hls(id, msid, psid) { return Source(url: u, transcoding: true, mediaSourceId: msid, playSessionId: psid) }
+            }
+        }
+        if let u = hls(id, id, session) { return Source(url: u, transcoding: true, mediaSourceId: id, playSessionId: session) }
+        return nil
+    }
+
+    static func hls(_ id: String, _ msid: String, _ psid: String) -> URL? {
+        EmbyClient.shared.url("/Videos/\(id)/master.m3u8", [
+            "DeviceId": EmbyClient.shared.deviceId, "MediaSourceId": msid, "PlaySessionId": psid,
+            "VideoCodec": "h264", "AudioCodec": "aac", "MaxAudioChannels": "2", "TranscodingMaxAudioChannels": "2",
+            "VideoBitrate": "12000000", "AudioBitrate": "192000", "SegmentContainer": "ts", "BreakOnNonKeyFrames": "true"
+        ])
+    }
+
+    static func absolute(_ t: String) -> URL? {
+        let c = EmbyClient.shared
+        var path = t
+        if !path.hasPrefix("/") { path = "/" + path }
+        // Emby returns paths beginning with /videos/...; servers behind /emby keep that prefix in `server`.
+        var s = c.server + path
+        if !s.contains("api_key=") && !s.lowercased().contains("apikey=") {
+            s += (s.contains("?") ? "&" : "?") + "api_key=" + c.token
+        }
+        return URL(string: s)
+    }
+}
+
 final class EmbyPlayerModel: ObservableObject {
     let player = AVPlayer()
+    @Published var loading = true
+    @Published var error: String?
+    @Published var mode = ""
     private var timer: Any?
     private var item: EmbyItem?
+    private var source: EmbyPlayback.Source?
     private var triedHLS = false
     private var statusObs: NSKeyValueObservation?
+    private var watchdog: DispatchWorkItem?
 
     func start(_ it: EmbyItem) {
         item = it
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-        play(EmbyClient.shared.stream(it.Id), resume: it.UserData?.PlaybackPositionTicks ?? 0)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        let resume = it.UserData?.PlaybackPositionTicks ?? 0
+        Task {
+            let src = await EmbyPlayback.resolve(it.Id, startTicks: resume)
+            await MainActor.run {
+                guard let src = src else { self.fail("无法获取播放地址，请检查服务器连接"); return }
+                self.source = src
+                self.triedHLS = src.transcoding
+                self.play(src.url, resume: resume, transcoding: src.transcoding)
+            }
+        }
         timer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 15, preferredTimescale: 1), queue: .main) { [weak self] t in
             guard let self = self, let it = self.item, t.seconds > 1 else { return }
             EmbyClient.shared.report(it.Id, ticks: Int64(t.seconds * 10_000_000), stopped: false)
         }
     }
 
-    private func play(_ url: URL?, resume: Int64) {
-        guard let u = url else { return }
-        let pi = AVPlayerItem(url: u)
-        statusObs = pi.observe(\.status) { [weak self] p, _ in
-            guard let self = self else { return }
-            if p.status == .failed && !self.triedHLS, let it = self.item {
-                self.triedHLS = true
-                let pos = Int64(self.player.currentTime().seconds * 10_000_000)
-                DispatchQueue.main.async { self.play(EmbyClient.shared.hls(it.Id), resume: max(pos, resume)) }
+    private func fail(_ m: String) {
+        loading = false
+        error = m
+    }
+
+    private func fallback(resume: Int64) {
+        guard !triedHLS, let it = item else {
+            fail("这个视频播放失败。可能是服务器没开转码权限，或格式不受支持。")
+            return
+        }
+        triedHLS = true
+        let msid = source?.mediaSourceId ?? it.Id
+        let psid = source?.playSessionId ?? UUID().uuidString
+        play(EmbyPlayback.hls(it.Id, msid, psid), resume: resume, transcoding: true)
+    }
+
+    private func play(_ url: URL?, resume: Int64, transcoding: Bool) {
+        guard let u = url else { fail("播放地址无效"); return }
+        mode = transcoding ? "转码" : "直连"
+        loading = true
+        error = nil
+        let c = EmbyClient.shared
+        let asset = AVURLAsset(url: u, options: ["AVURLAssetHTTPHeaderFieldsKey": ["X-Emby-Token": c.token, "X-Emby-Authorization": c.authorization]])
+        let pi = AVPlayerItem(asset: asset)
+        statusObs = pi.observe(\.status, options: [.new]) { [weak self] p, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch p.status {
+                case .readyToPlay:
+                    self.loading = false
+                    self.watchdog?.cancel()
+                case .failed:
+                    self.watchdog?.cancel()
+                    let pos = Int64(max(0, self.player.currentTime().seconds) * 10_000_000)
+                    self.fallback(resume: max(pos, resume))
+                default: break
+                }
             }
         }
         player.replaceCurrentItem(with: pi)
-        if resume > 0 { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
+        // HLS transcodes already start at StartTimeTicks; direct streams need a seek.
+        if resume > 0 && !transcoding { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
         player.play()
+        watchdog?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self, pi.status != .readyToPlay else { return }
+            self.fallback(resume: resume)
+        }
+        watchdog = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + (transcoding ? 30 : 12), execute: w)
     }
 
     func stop() {
+        watchdog?.cancel()
         if let it = item {
             EmbyClient.shared.report(it.Id, ticks: Int64(max(0, player.currentTime().seconds) * 10_000_000), stopped: true)
         }
         if let t = timer { player.removeTimeObserver(t) }
         timer = nil
         player.pause()
+        player.replaceCurrentItem(with: nil)
     }
 }
 
@@ -1313,12 +1496,32 @@ struct EmbyPlayerView: View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
             VideoPlayer(player: model.player).ignoresSafeArea()
+            if model.loading && model.error == nil {
+                VStack(spacing: 10) {
+                    ProgressView().tint(.white)
+                    Text(model.mode.isEmpty ? "正在连接…" : "正在加载（\(model.mode)）").font(.footnote).foregroundColor(.white.opacity(0.8))
+                }
+                .padding(18)
+                .glassCard(radius: 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+            }
+            if let e = model.error {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.title).foregroundColor(.yellow)
+                    Text(e).multilineTextAlignment(.center).foregroundColor(.white)
+                }
+                .padding(22)
+                .glassCard(radius: 22)
+                .padding(30)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             Button {
                 model.stop()
                 dismiss()
             } label: {
-                Image(systemName: "xmark").font(.headline).foregroundColor(.white).frame(width: 40, height: 40)
-                    .background(Circle().fill(Color.black.opacity(0.5)))
+                Image(systemName: "xmark").font(.headline).foregroundColor(.white).frame(width: 42, height: 42)
+                    .glassSurface(Circle(), interactive: true)
             }
             .padding()
         }
