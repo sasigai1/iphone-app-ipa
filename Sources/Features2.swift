@@ -560,6 +560,7 @@ struct FocusTimerView: View {
             }
             .padding(.top, 20)
             .navigationTitle("专注番茄钟")
+            .onDisappear { NoisePlayer.shared.off() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }

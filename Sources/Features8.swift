@@ -381,7 +381,7 @@ struct DocumentPicker: UIViewControllerRepresentable {
         let onPick: ([URL]) -> Void
         init(onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { onPick(urls) }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { onPick([]) }
     }
 }
 
@@ -407,7 +407,7 @@ struct BookImportHost: ViewModifier {
             .sheet(isPresented: $picking) {
                 DocumentPicker(types: types) { urls in
                     picking = false
-                    handle(urls)
+                    if !urls.isEmpty { handle(urls) }
                 }
                 .ignoresSafeArea()
             }
@@ -653,7 +653,18 @@ struct EbookReaderView: View {
             VStack(spacing: 12) {
                 HStack {
                     Text("\(chapter + 1)/\(chapters.count) 章").font(.caption.monospacedDigit())
-                    Slider(value: Binding(get: { Double(chapter) }, set: { chapter = Int($0); topPara = 0; savePos() }), in: 0...Double(max(1, chapters.count - 1)), step: 1)
+                    if chapters.count > 1 {
+                        Slider(value: Binding(get: { Double(chapter) }, set: { v in
+                            let c = min(max(0, Int(v)), chapters.count - 1)
+                            guard c != chapter else { return }
+                            chapter = c
+                            topPara = 0
+                            savePos()
+                            if listener.active { listener.start(chapters[c].paras, from: 0) }
+                        }), in: 0...Double(chapters.count - 1), step: 1)
+                    } else {
+                        Spacer()
+                    }
                     Text("\(Int(Double(chapter + 1) / Double(chapters.count) * 100))%").font(.caption.monospacedDigit())
                 }
                 Text("今日已读 \((ReadingClock.today + Int(Date().timeIntervalSince(openedAt))) / 60) 分钟 · 近 7 天 \(ReadingClock.week / 60) 分钟")
@@ -704,6 +715,7 @@ struct EbookReaderView: View {
         visible.removeAll()
         savePos()
         proxy.scrollTo(-1, anchor: .top)
+        if listener.active && chapter < chapters.count { listener.start(chapters[chapter].paras, from: 0) }
     }
 
     private func savePos() {
@@ -821,6 +833,13 @@ struct ContinueReadingCard: View {
     @State private var open: Book?
 
     var body: some View {
+        VStack(spacing: 0) { card }
+            .fullScreenCover(item: $open) { bk in
+                if (bk.file ?? "").lowercased().hasSuffix(".pdf") { PDFReaderView(bookID: bk.id) } else { EbookReaderView(bookID: bk.id) }
+            }
+    }
+
+    @ViewBuilder private var card: some View {
         if let b = life.data.books.filter({ $0.file != nil && $0.status == 1 && $0.lastRead != nil }).max(by: { ($0.lastRead ?? .distantPast) < ($1.lastRead ?? .distantPast) }) {
             Button { open = b } label: {
                 HStack(spacing: 14) {
@@ -836,9 +855,6 @@ struct ContinueReadingCard: View {
                 .card()
             }
             .buttonStyle(PressableStyle())
-            .fullScreenCover(item: $open) { bk in
-                if (bk.file ?? "").lowercased().hasSuffix(".pdf") { PDFReaderView(bookID: bk.id) } else { EbookReaderView(bookID: bk.id) }
-            }
         }
     }
 }
@@ -899,7 +915,7 @@ final class EmbyClient: ObservableObject {
     var authorization: String { authHeader }
 
     private var authHeader: String {
-        "MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"9.0\"" + (token.isEmpty ? "" : ", Token=\"\(token)\"")
+        "MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"10.0\"" + (token.isEmpty ? "" : ", Token=\"\(token)\"")
     }
 
     static func normalize(_ s: String) -> String {
@@ -924,7 +940,7 @@ final class EmbyClient: ObservableObject {
         r.httpMethod = "POST"
         r.timeoutInterval = 15
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.setValue("MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"9.0\"", forHTTPHeaderField: "X-Emby-Authorization")
+        r.setValue("MediaBrowser Client=\"Moye\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"10.0\"", forHTTPHeaderField: "X-Emby-Authorization")
         r.httpBody = try JSONSerialization.data(withJSONObject: ["Username": user, "Pw": password, "Password": password])
         let (d, resp) = try await URLSession.shared.data(for: r)
         guard let h = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
@@ -1530,21 +1546,26 @@ final class EmbyPlayerModel: ObservableObject {
     @Published var mode = ""
     @Published var log: [String] = []
     private var timer: Any?
-    private(set) var item: EmbyItem?
+    private(set) var item: EmbyItem? { didSet { if let i = item { lastItem = i } } }
+    private var lastItem: EmbyItem?
     private var queue: [EmbyPlayback.Source] = []
     private var resumeTicks: Int64 = 0
     private var statusObs: NSKeyValueObservation?
     private var watchdog: DispatchWorkItem?
     private var attempt = 0
+    private var cancelled = false
+    private var offsetSeconds: Double = 0
 
     func start(_ it: EmbyItem) {
         item = it
+        cancelled = false
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         resumeTicks = it.UserData?.PlaybackPositionTicks ?? 0
         Task {
             let list = await EmbyPlayback.candidates(it.Id, startTicks: resumeTicks)
             await MainActor.run {
+                guard !self.cancelled else { return }
                 self.queue = list
                 self.next()
             }
@@ -1552,13 +1573,13 @@ final class EmbyPlayerModel: ObservableObject {
         if timer == nil {
             timer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 15, preferredTimescale: 1), queue: .main) { [weak self] t in
                 guard let self = self, let it = self.item, t.seconds > 1 else { return }
-                EmbyClient.shared.report(it.Id, ticks: Int64(t.seconds * 10_000_000), stopped: false)
+                EmbyClient.shared.report(it.Id, ticks: Int64((t.seconds + self.offsetSeconds) * 10_000_000), stopped: false)
             }
         }
     }
 
     func retry() {
-        guard let it = item else { return }
+        guard let it = item ?? lastItem else { return }
         failed = false
         log = []
         attempt = 0
@@ -1608,7 +1629,9 @@ final class EmbyPlayerModel: ObservableObject {
             }
         }
         player.replaceCurrentItem(with: pi)
-        if resume > 0 && !src.transcoding { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
+        let serverOffset = src.url.absoluteString.contains("StartTimeTicks")
+        offsetSeconds = serverOffset ? Double(resume) / 10_000_000 : 0
+        if resume > 0 && !serverOffset { player.seek(to: CMTime(seconds: Double(resume) / 10_000_000, preferredTimescale: 600)) }
         player.play()
         let w = DispatchWorkItem { [weak self] in
             guard let self = self, self.player.currentItem === pi, pi.status != .readyToPlay else { return }
@@ -1620,9 +1643,13 @@ final class EmbyPlayerModel: ObservableObject {
     }
 
     func stop() {
+        cancelled = true
         watchdog?.cancel()
-        if let it = item {
-            EmbyClient.shared.report(it.Id, ticks: Int64(max(0, player.currentTime().seconds) * 10_000_000), stopped: true)
+        guard let it = item else { return }
+        item = nil
+        let pos = player.currentTime().seconds
+        if pos.isFinite && pos > 1 {
+            EmbyClient.shared.report(it.Id, ticks: Int64((pos + offsetSeconds) * 10_000_000), stopped: true)
         }
         if let t = timer { player.removeTimeObserver(t) }
         timer = nil

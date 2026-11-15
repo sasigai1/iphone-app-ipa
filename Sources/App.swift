@@ -52,17 +52,23 @@ struct RootView: View {
         }
         .onContinueUserActivity(CSSearchableItemActionType) { act in
             if let s = act.userInfo?[CSSearchableItemActivityIdentifier] as? String, let id = UUID(uuidString: s) {
-                tab = 0
+                NotificationCenter.default.post(name: .moyeSwitchTab, object: 0)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { router.openPage = id }
             }
         }
-        .onChange(of: router.action) { a in
-            if a != nil && tab != 0 { withAnimation { tab = 0 } }
-        }
         .onChange(of: phase) { p in
             if p == .active { MoyeRouter.shared.consumePending() }
-            if p == .background { SpotlightIndex.sync(store.pages) }
-            if p == .background && lockEnabled { locked = true }
+            if p == .background {
+                store.save()
+                SpotlightIndex.sync(store.pages)
+            }
+            if p == .background && lockEnabled {
+                locked = true
+                // The lock screen lives under any open sheet, so close sheets first.
+                for sc in UIApplication.shared.connectedScenes {
+                    if let ws = sc as? UIWindowScene { ws.windows.forEach { $0.rootViewController?.dismiss(animated: false) } }
+                }
+            }
             if p == .background { PrivacyStore.shared.lockAll() }
         }
     }

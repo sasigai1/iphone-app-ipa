@@ -291,41 +291,44 @@ struct ImportCenterView: View {
             } footer: {
                 Text("可多选。支持标题、列表、待办、引用、代码块和分割线，可以导入 Notion 或 Obsidian 导出的 .md 文件。")
             }
-            .fileImporter(isPresented: $mdImporter, allowedContentTypes: mdTypes, allowsMultipleSelection: true) { r in
-                guard case .success(let urls) = r else { return }
-                var n = 0
-                for u in urls {
-                    let ok = u.startAccessingSecurityScopedResource()
-                    defer { if ok { u.stopAccessingSecurityScopedResource() } }
-                    guard let text = (try? String(contentsOf: u, encoding: .utf8)) ?? (try? String(contentsOf: u)) else { continue }
-                    var p = MarkdownImporter.page(from: text, fallbackTitle: u.deletingPathExtension().lastPathComponent)
-                    p.icon = "📥"
-                    store.pages.append(p)
-                    n += 1
-                }
-                message = "已导入 \(n) 个页面"
-            }
             Section {
                 Button { csvImporter = true } label: { Label("导入 Anki / CSV 卡组", systemImage: "rectangle.stack.badge.plus") }
             } footer: {
                 Text("每行「正面,背面」，也支持 Tab 分隔（Anki 导出为纯文本）。会生成一个带 #闪卡 标签的新页面。")
             }
-            .fileImporter(isPresented: $csvImporter, allowedContentTypes: [.commaSeparatedText, .tabSeparatedText, .plainText, .text], allowsMultipleSelection: false) { r in
-                guard case .success(let urls) = r, let u = urls.first else { return }
+        }
+        .fileImporter(isPresented: $mdImporter, allowedContentTypes: mdTypes, allowsMultipleSelection: true) { r in
+            guard case .success(let urls) = r else { return }
+            var n = 0
+            for u in urls {
                 let ok = u.startAccessingSecurityScopedResource()
                 defer { if ok { u.stopAccessingSecurityScopedResource() } }
-                guard let text = try? String(contentsOf: u, encoding: .utf8) else { message = "无法读取文件"; return }
-                let pairs = MarkdownImporter.parseCSV(text)
-                guard !pairs.isEmpty else { message = "没有找到卡片"; return }
-                var p = Page()
-                p.title = u.deletingPathExtension().lastPathComponent
-                p.icon = "🗂️"
-                p.tags = ["闪卡"]
-                p.blocks = pairs.map { var b = Block(); b.text = "\($0.0) :: \($0.1)"; return b }
+                guard let text = (try? String(contentsOf: u, encoding: .utf8)) ?? (try? String(contentsOf: u)) else { continue }
+                var p = MarkdownImporter.page(from: text, fallbackTitle: u.deletingPathExtension().lastPathComponent)
+                p.icon = "📥"
                 store.pages.append(p)
-                message = "已导入 \(pairs.count) 张卡片"
+                n += 1
             }
+            message = "已导入 \(n) 个页面"
         }
+        .background(
+            Color.clear
+                .fileImporter(isPresented: $csvImporter, allowedContentTypes: [.commaSeparatedText, .tabSeparatedText, .plainText, .text], allowsMultipleSelection: false) { r in
+                    guard case .success(let urls) = r, let u = urls.first else { return }
+                    let ok = u.startAccessingSecurityScopedResource()
+                    defer { if ok { u.stopAccessingSecurityScopedResource() } }
+                    guard let text = try? String(contentsOf: u, encoding: .utf8) else { message = "无法读取文件"; return }
+                    let pairs = MarkdownImporter.parseCSV(text)
+                    guard !pairs.isEmpty else { message = "没有找到卡片"; return }
+                    var p = Page()
+                    p.title = u.deletingPathExtension().lastPathComponent
+                    p.icon = "🗂️"
+                    p.tags = ["闪卡"]
+                    p.blocks = pairs.map { var b = Block(); b.text = "\($0.0) :: \($0.1)"; return b }
+                    store.pages.append(p)
+                    message = "已导入 \(pairs.count) 张卡片"
+                }
+        )
         .navigationTitle("导入")
         .alert("导入", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("好") { message = nil }

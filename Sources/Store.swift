@@ -27,6 +27,12 @@ final class NoteStore: ObservableObject {
         if let data = try? Data(contentsOf: fileURL),
            let decoded = try? JSONDecoder().decode([Page].self, from: data) {
             pages = decoded
+        } else if FileManager.default.fileExists(atPath: fileURL.path) {
+            // Never overwrite a file we failed to read: keep a copy and recover what we can.
+            let bak = fileURL.deletingLastPathComponent().appendingPathComponent("moye_store_corrupt_\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.copyItem(at: fileURL, to: bak)
+            pages = NoteStore.salvage(fileURL)
+            if pages.isEmpty { pages = Templates.seed() }
         } else {
             pages = Templates.seed()
             save()
@@ -35,6 +41,17 @@ final class NoteStore: ObservableObject {
            let a = try? JSONDecoder().decode([String: Int].self, from: data) {
             activity = a
         }
+    }
+
+    /// Decode pages one by one so a single bad page doesn't lose the rest.
+    static func salvage(_ url: URL) -> [Page] {
+        guard let data = try? Data(contentsOf: url),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return [] }
+        var out: [Page] = []
+        for o in arr {
+            if let d = try? JSONSerialization.data(withJSONObject: o), let p = try? JSONDecoder().decode(Page.self, from: d) { out.append(p) }
+        }
+        return out
     }
 
     func save() {

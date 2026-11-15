@@ -363,7 +363,7 @@ struct SettingsView: View {
                 .glassRow()
 
                 Section("关于") {
-                    LabeledContent("版本", value: "9.0")
+                    LabeledContent("版本", value: "10.0")
                     LabeledContent("数据存储", value: "仅保存在本机")
                 }
                 .glassRow()

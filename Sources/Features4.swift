@@ -871,7 +871,7 @@ struct TodayPanel: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.green)
                         Spacer()
-                        Button("全部") { onDaily() }.font(.caption)
+                        Button("全部") { onDaily() }.font(.caption).buttonStyle(.borderless)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {

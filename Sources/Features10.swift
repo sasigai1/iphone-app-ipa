@@ -21,6 +21,7 @@ final class MoyeRouter: ObservableObject {
         let d = UserDefaults.standard
         if let a = d.string(forKey: MoyeRouter.pendingKey) {
             d.removeObject(forKey: MoyeRouter.pendingKey)
+            NotificationCenter.default.post(name: .moyeSwitchTab, object: 0)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.action = a }
         }
     }
@@ -128,9 +129,12 @@ enum SpotlightIndex {
             CSSearchableIndex.default().deleteAllSearchableItems(completionHandler: nil)
             return
         }
-        let visible = pages.filter { !$0.isTrashed && !$0.locked }
+        let priv = PrivacyStore.shared.ids
+        let titlesOnly = UserDefaults.standard.bool(forKey: "lockEnabled")
+        let visible = pages.filter { !$0.isTrashed && !$0.locked && !priv.contains($0.id) }
         var h = Hasher()
         for p in visible { h.combine(p.id); h.combine(p.updated) }
+        h.combine(titlesOnly)
         let hv = h.finalize()
         if hv == lastHash { return }
         lastHash = hv
@@ -139,7 +143,7 @@ enum SpotlightIndex {
                 let a = CSSearchableItemAttributeSet(contentType: .text)
                 a.title = (p.icon.isEmpty ? "" : p.icon + " ") + p.displayTitle
                 let body = p.blocks.map { $0.text }.filter { !$0.isEmpty }.joined(separator: " ")
-                a.contentDescription = String(body.prefix(300))
+                a.contentDescription = titlesOnly ? "墨页笔记" : String(body.prefix(300))
                 a.keywords = p.tags + ["墨页"]
                 a.contentModificationDate = p.updated
                 return CSSearchableItem(uniqueIdentifier: p.id.uuidString, domainIdentifier: "moye.pages", attributeSet: a)
@@ -200,6 +204,7 @@ final class VoiceRecorder: ObservableObject {
 
         let input = engine.inputNode
         let fmt = input.outputFormat(forBus: 0)
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { error = "麦克风正被其他应用或通话占用"; return }
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
             self?.request?.append(buf)
@@ -245,7 +250,8 @@ final class VoiceRecorder: ObservableObject {
         task = nil
         recording = false
         level = 0
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: .mixWithOthers)
+        if NoisePlayer.shared.kind != 0 { NoisePlayer.shared.set(NoisePlayer.shared.kind) }
     }
 }
 
@@ -327,7 +333,10 @@ struct VoiceNoteView: View {
 
     private func save() {
         rec.stop()
-        let text = "🎙 " + rec.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = rec.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let f = DateFormatter()
+        f.dateFormat = "M月d日 HH:mm"
+        let text = target == 2 ? "🎙 语音闪念 \(f.string(from: Date()))\n" + body : "🎙 " + body
         let id = store.capture(text, target: target, asTodo: false)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         dismiss()
@@ -344,7 +353,8 @@ extension NoteStore {
         let now = Date()
         let md = cal.dateComponents([.month, .day], from: now)
         var out: [(String, Page)] = []
-        for p in active where p.kind == .document {
+        let priv = PrivacyStore.shared.ids
+        for p in active where p.kind == .document && !p.locked && !priv.contains(p.id) {
             let c = cal.dateComponents([.year, .month, .day], from: p.created)
             let years = (cal.dateComponents([.year], from: now).year ?? 0) - (c.year ?? 0)
             if years > 0, c.month == md.month, c.day == md.day {
@@ -358,7 +368,8 @@ extension NoteStore {
     }
 
     func reviewCandidates(_ n: Int) -> [Page] {
-        let old = active.filter { $0.kind == .document && !$0.locked && $0.wordCount > 10 && Date().timeIntervalSince($0.updated) > 3 * 86400 }
+        let priv = PrivacyStore.shared.ids
+        let old = active.filter { $0.kind == .document && !$0.locked && !priv.contains($0.id) && $0.wordCount > 10 && Date().timeIntervalSince($0.updated) > 3 * 86400 }
         return Array(old.shuffled().prefix(n))
     }
 }
@@ -602,7 +613,7 @@ final class NoisePlayer: ObservableObject {
     func set(_ k: Int) {
         kind = k
         if k == 0 { stop(); return }
-        if node == nil { start() }
+        if node == nil || !engine.isRunning { stop(); start() }
     }
 
     private func start() {
@@ -663,6 +674,8 @@ final class NoisePlayer: ObservableObject {
         if let n = node { engine.detach(n) }
         node = nil
     }
+
+    func off() { kind = 0; stop() }
 }
 
 struct NoisePicker: View {
@@ -713,6 +726,8 @@ final class BookListener: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
     }
 
     func start(_ paras: [String], from: Int) {
+        active = false            // so the cancelled utterance doesn't advance
+        synth.stopSpeaking(at: .immediate)
         self.paras = paras
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try? AVAudioSession.sharedInstance().setActive(true)

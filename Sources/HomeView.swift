@@ -156,6 +156,7 @@ struct HomeView: View {
                 .glassRow()
             }
             .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
             .ambient()
             .overlay(alignment: .bottomTrailing) {
                 VStack(spacing: 12) {
@@ -274,7 +275,7 @@ struct HomeView: View {
                         Button {
                             showWhatsNew = true
                         } label: {
-                            Label("9.0 新功能", systemImage: "sparkles")
+                            Label("10.0 新功能", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "square.and.pencil")
@@ -409,7 +410,7 @@ struct HomeView: View {
             PaletteAction(title: "随机漫步", symbol: "shuffle", keywords: "random wander suiji") { path.append("wander") },
             PaletteAction(title: "标签管理", symbol: "number.square", keywords: "tags biaoqian") { path.append("tags") },
             PaletteAction(title: "Emby 媒体库", symbol: "play.rectangle.on.rectangle", keywords: "emby jellyfin") { path.append("emby") },
-            PaletteAction(title: "9.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
+            PaletteAction(title: "10.0 新功能", symbol: "sparkles", keywords: "whats new") { showWhatsNew = true }
         ]
     }
 

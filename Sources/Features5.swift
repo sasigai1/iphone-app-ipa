@@ -938,7 +938,7 @@ struct BookDetail: View {
 
     var body: some View {
         if let i = idx {
-            let b = life.data.books[i]
+            let b = life.data.books[safe: i]
             List {
                 Section {
                     HStack(alignment: .top, spacing: 16) {
@@ -950,15 +950,15 @@ struct BookDetail: View {
                                 ForEach(1...5, id: \.self) { s in
                                     Image(systemName: s <= b.rating ? "star.fill" : "star")
                                         .foregroundColor(.orange)
-                                        .onTapGesture { life.data.books[i].rating = (b.rating == s ? 0 : s) }
+                                        .onTapGesture { life.data.books[safe: i].rating = (b.rating == s ? 0 : s) }
                                 }
                             }
-                            Picker("", selection: Binding(get: { life.data.books[i].status }, set: { v in
-                                life.data.books[i].status = v
-                                if v == 1 && life.data.books[i].started == nil { life.data.books[i].started = Date() }
+                            Picker("", selection: Binding(get: { life.data.books[safe: i].status }, set: { v in
+                                life.data.books[safe: i].status = v
+                                if v == 1 && life.data.books[safe: i].started == nil { life.data.books[safe: i].started = Date() }
                                 if v == 2 {
-                                    life.data.books[i].finished = Date()
-                                    life.data.books[i].current = life.data.books[i].total
+                                    life.data.books[safe: i].finished = Date()
+                                    life.data.books[safe: i].current = life.data.books[safe: i].total
                                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                                 }
                             })) {
@@ -981,11 +981,11 @@ struct BookDetail: View {
                             Spacer()
                             Text("\(Int(b.progress * 100))%").font(.subheadline.weight(.bold)).foregroundColor(.accentColor)
                         }
-                        Slider(value: Binding(get: { Double(life.data.books[i].current) }, set: { life.data.books[i].current = Int($0) }), in: 0...Double(max(1, b.total)), step: 1)
+                        Slider(value: Binding(get: { Double(life.data.books[safe: i].current) }, set: { life.data.books[safe: i].current = Int($0) }), in: 0...Double(max(1, b.total)), step: 1)
                         HStack {
                             ForEach([-10, 10, 30, 50], id: \.self) { d in
                                 Button(d > 0 ? "+\(d)" : "\(d)") {
-                                    life.data.books[i].current = max(0, min(b.total, b.current + d))
+                                    life.data.books[safe: i].current = max(0, min(b.total, b.current + d))
                                 }
                                 .buttonStyle(.bordered)
                                 .font(.caption)
@@ -1002,7 +1002,7 @@ struct BookDetail: View {
                         Text("“\(q)”")
                             .font(.system(.subheadline, design: .serif))
                             .swipeActions {
-                                Button(role: .destructive) { life.data.books[i].quotes.remove(at: qi) } label: { Label("删除", systemImage: "trash") }
+                                Button(role: .destructive) { if life.data.books[safe: i].quotes.indices.contains(qi) { life.data.books[safe: i].quotes.remove(at: qi) } } label: { Label("删除", systemImage: "trash") }
                             }
                             .contextMenu {
                                 Button { UIPasteboard.general.string = q } label: { Label("复制", systemImage: "doc.on.doc") }
@@ -1013,13 +1013,13 @@ struct BookDetail: View {
                         Button {
                             let t = newQuote.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !t.isEmpty else { return }
-                            life.data.books[i].quotes.append(t)
+                            life.data.books[safe: i].quotes.append(t)
                             newQuote = ""
                         } label: { Image(systemName: "plus.circle.fill") }
                     }
                 }
                 Section("读后感") {
-                    TextEditor(text: Binding(get: { life.data.books[i].review }, set: { life.data.books[i].review = $0 }))
+                    TextEditor(text: Binding(get: { life.data.books[safe: i].review }, set: { life.data.books[safe: i].review = $0 }))
                         .frame(minHeight: 100)
                 }
                 Section {
@@ -1395,5 +1395,14 @@ struct WhatsNew5View: View {
                 .padding(20)
             }
         }
+    }
+}
+
+
+extension Array where Element == Book {
+    /// Bounds-safe access so a binding captured before a delete can't crash.
+    subscript(safe i: Int) -> Book {
+        get { indices.contains(i) ? self[i] : Book() }
+        set { if indices.contains(i) { self[i] = newValue } }
     }
 }
